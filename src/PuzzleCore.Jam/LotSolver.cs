@@ -35,7 +35,23 @@ namespace PuzzleCore.Jam
         public static SolveResult<Exit> Solve(LotLevel level, CapacityCount bays, NodeBudget budget)
         {
             var search = new Search(level, bays.Value, budget);
-            return search.Run();
+            return search.Run(0U);
+        }
+
+        /// <summary>
+        /// A winning continuation from a position in play, with the bays of that state (spare
+        /// included). The path holds only the remaining exits. Used for near-miss and rewind reach.
+        /// </summary>
+        public static SolveResult<Exit> SolveFrom(LotLevel level, LotState state, NodeBudget budget)
+        {
+            bool isFull = state.FreeSlots == 0 && state.Exited != level.AllExitedMask;
+            if (isFull)
+            {
+                return new SolveResult<Exit>.Unsolvable();
+            }
+
+            var search = new Search(level, state.Capacity.Value, budget);
+            return search.Run(state.Exited);
         }
 
         /// <summary>
@@ -47,7 +63,7 @@ namespace PuzzleCore.Jam
             // Each bay count gets the whole budget; BudgetExceeded reports the nodes of the search that ran out.
             for (int bays = SetSize; bays <= maxBays.Value; bays++)
             {
-                switch (new Search(level, bays, budget).Run())
+                switch (new Search(level, bays, budget).Run(0U))
                 {
                     case SolveResult<Exit>.Solved solved:
                         return new PeakParResult.Found(new CapacityCount(bays), solved.Path);
@@ -99,9 +115,23 @@ namespace PuzzleCore.Jam
                 _budget = budget.Nodes;
             }
 
-            public SolveResult<Exit> Run()
+            public SolveResult<Exit> Run(uint startExited)
             {
-                Outcome outcome = Explore(0U, 0);
+                int occupied = 0;
+                for (int index = 0; index < _level.VehicleCount; index++)
+                {
+                    if ((startExited & (1U << index)) != 0)
+                    {
+                        _colourCounts[_level.Vehicles[index].Colour.Value]++;
+                    }
+                }
+
+                foreach (int count in _colourCounts)
+                {
+                    occupied += count % SetSize;
+                }
+
+                Outcome outcome = Explore(startExited, occupied);
                 return outcome switch
                 {
                     Outcome.Win => new SolveResult<Exit>.Solved(ReadOnlyArray.CopyOf(_path)),

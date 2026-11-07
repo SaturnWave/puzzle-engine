@@ -175,21 +175,44 @@ namespace PuzzleCore.Play
                 return Refuse(InvalidReason.RewindOutsideFail);
             }
 
-            bool isInRange = moves.Value >= 1 && moves.Value <= MaxRewind && moves.Value <= Moves.Value;
-            if (!isInRange)
+            if (!PeekRewind(moves).TryGet(out TState restored))
             {
                 return Refuse(InvalidReason.RewindOutOfRange);
             }
 
             int target = _line.Count - 1 - moves.Value;
             _line.RemoveRange(target + 1, _line.Count - target - 1);
-            if (SpareUsed && target < _spareAtIndex && _rules.TryWithOneSpare(_line[target]).TryGet(out TState spared))
+            if (SpareUsed && target < _spareAtIndex)
             {
-                _line[target] = spared;
                 _spareAtIndex = target;
             }
 
+            _line[target] = restored;
             return Done(new PuzzleEvent.Rewound(moves));
+        }
+
+        /// <summary>
+        /// The state a rewind of <paramref name="moves"/> would restore (the spare kept), without
+        /// changing the attempt; None when the length is outside 1-5 or beyond the line. Lets an
+        /// offer check whether some rewind can still win before it is shown.
+        /// </summary>
+        public Option<TState> PeekRewind(MoveCount moves)
+        {
+            bool isInRange = moves.Value >= 1 && moves.Value <= MaxRewind && moves.Value <= Moves.Value;
+            if (!isInRange)
+            {
+                return Option.None<TState>();
+            }
+
+            int target = _line.Count - 1 - moves.Value;
+            TState restored = _line[target];
+            bool needsSpare = SpareUsed && target < _spareAtIndex;
+            if (needsSpare && _rules.TryWithOneSpare(restored).TryGet(out TState spared))
+            {
+                restored = spared;
+            }
+
+            return Option.Some(restored);
         }
 
         /// <summary>Shows one hidden cell (Campaign only, at most once per attempt). It changes nothing in the rules state.</summary>

@@ -1,0 +1,300 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@using System.Globalization
+@using PuzzleCore
+@using PuzzleCore.Jam
+@using PuzzleCore.Rules
+@using CoveredLot.Playtest.Game
+@inject PlaytestLevels Catalogue
+
+<PageTitle>Covered Lot · playtest</PageTitle>
+
+<div class="app">
+    <header class="topbar">
+        <div class="title">Covered Lot <span class="tag">playtest</span></div>
+        <div class="level-picker">
+            <button class="btn" @onclick="() => Open(_levelIndex - 1)" disabled="@(_levelIndex == 0)">‹</button>
+            <select @onchange="OnPick">
+                @for (int index = 0; index < Catalogue.All.Count; index++)
+                {
+                    <option value="@N(index)" selected="@(index == _levelIndex)">@Catalogue.All[index].Name</option>
+                }
+            </select>
+            <button class="btn" @onclick="() => Open(_levelIndex + 1)" disabled="@(_levelIndex == Catalogue.All.Count - 1)">›</button>
+        </div>
+    </header>
+
+    <section class="hud">
+        <div class="stat"><span class="label">Bays free</span><span class="value">@N(_session.State.FreeSlots) / @N(_session.State.Capacity.Value)</span></div>
+        <div class="stat"><span class="label">Most bays used</span><span class="value">@N(_session.Peak)</span></div>
+        <div class="stat"><span class="label">Par</span><span class="value">@N(_session.Level.PeakPar.Value)</span></div>
+        <div class="stat"><span class="label">Vehicles left</span><span class="value">@N(VehiclesLeft)</span></div>
+        <button class="btn" @onclick="Retry">Restart</button>
+    </section>
+
+    <div class="message" role="status">@_session.Message</div>
+
+    <main class="play">
+        <div class="lot" style="@LotStyle">
+            @for (int cellIndex = 0; cellIndex < Lot.Size.CellCount; cellIndex++)
+            {
+                var cell = new LotCell((byte)cellIndex);
+                bool isPillar = (Lot.Pillars & cell.Bit) != 0;
+                <div class="@(isPillar ? "cell pillar" : "cell")" style="@Area(cell, 1, 1)">@(isPillar ? "▲" : "")</div>
+            }
+
+            @foreach (Vehicle vehicle in Lot.Vehicles)
+            {
+                bool hasLeft = _session.State.HasExited(vehicle.Id);
+                bool isLeavingNow = _session.JustLeft.TryGet(out PieceId left) && left == vehicle.Id;
+                if (hasLeft && !isLeavingNow)
+                {
+                    continue;
+                }
+
+                bool covered = _session.IsCovered(vehicle.Id);
+                <button @key="@KeyOf(vehicle.Id)"
+                        class="@VehicleClass(vehicle, covered, isLeavingNow)"
+                        style="@VehicleStyle(vehicle, covered)"
+                        title="@VehicleTitle(vehicle, covered)"
+                        disabled="@(hasLeft || !(_session.Outcome is Outcome.InPlay))"
+                        @onclick="() => Tap(vehicle.Id)">
+                    <span class="arrow">@Arrow(vehicle.Facing)</span>
+                    <span class="letter">@(covered ? "?" : Palette.Letter(vehicle.Colour))</span>
+                    @if (covered)
+                    {
+                        @foreach (string tag in TagsOn(vehicle.Id))
+                        {
+                            <span class="clue">@tag</span>
+                        }
+                    }
+                </button>
+            }
+        </div>
+
+        <aside class="side">
+            <div class="bays-title">Bays</div>
+            <div class="bays">
+                @for (int slot = 0; slot < _session.State.Capacity.Value; slot++)
+                {
+                    Option<ColourId> parked = _session.State.ColourIn(new SlotIndex((byte)slot));
+                    bool isSpare = slot >= Lot.Bays.Value;
+                    if (parked.TryGet(out ColourId colour))
+                    {
+                        <div class="@(isSpare ? "bay filled spare" : "bay filled")" style="@($"background:{Palette.Css(colour)};color:{Palette.Ink(colour)}")">@Palette.Letter(colour)</div>
+                    }
+                    else
+                    {
+                        <div class="@(isSpare ? "bay spare" : "bay")"></div>
+                    }
+                }
+            </div>
+            <p class="hint">Three of one colour in the bays drive off together, in any order. If every bay is full, the level is lost.</p>
+
+            @if (Lot.IsCoveredLevel)
+            {
+                <div class="ledger">
+                    <div class="bays-title">Ledger (still covered)</div>
+                    @foreach ((ColourId colour, int count) in _session.Ledger())
+                    {
+                        <span class="ledger-entry" style="@($"border-color:{Palette.Css(colour)}")">@Palette.Letter(colour) @N(count)</span>
+                    }
+                    <p class="hint">Covered vehicles show their shape and direction, not their colour. The tags and the ledger are enough to work out every covered colour before your first tap.</p>
+                </div>
+            }
+        </aside>
+    </main>
+
+    @if (_session.Outcome is Outcome.Won)
+    {
+        <div class="overlay">
+            <div class="card">
+                <div class="stars">@Stars(_session.Stars)</div>
+                <h2>Lot cleared!</h2>
+                <p>Most bays used: @N(_session.Peak) (par @N(_session.Level.PeakPar.Value))</p>
+                @if (_session.SpareUsed)
+                {
+                    <p class="hint">You used the extra bay on this attempt.</p>
+                }
+                <div class="actions">
+                    <button class="btn" @onclick="Retry">Play again</button>
+                    <button class="btn primary" @onclick="() => Open(_levelIndex + 1)" disabled="@(_levelIndex == Catalogue.All.Count - 1)">Next level</button>
+                </div>
+            </div>
+        </div>
+    }
+    else if (_session.Outcome is Outcome.Failed)
+    {
+        <div class="overlay">
+            <div class="card">
+                <h2>All bays are full</h2>
+                <p>@N(VehiclesLeft) vehicles still in the lot.</p>
+                <div class="actions column">
+                    <button class="btn primary" @onclick="Retry">Retry (free)</button>
+                    @if (_session.Offers.SpareCanWin)
+                    {
+                        <button class="btn" @onclick="_session.TakeSpare">+1 bay</button>
+                        <p class="offer-copy">This offer only appears when one more bay can still win.</p>
+                    }
+                    @if (_session.Offers.RewindCanWin)
+                    {
+                        <div class="rewind">
+                            Rewind
+                            @for (int moves = 1; moves <= Math.Min(5, Lot.VehicleCount - VehiclesLeft); moves++)
+                            {
+                                int length = moves;
+                                <button class="btn small" @onclick="() => _session.Rewind(length)">@N(length)</button>
+                            }
+                            moves
+                        </div>
+                        <p class="offer-copy">A rewind of up to 5 moves can still win.</p>
+                    }
+                    <p class="hint">Test version: +1 bay and rewind are free here. In the game they cost gold.</p>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private int _levelIndex;
+    private PlaySession _session = null!;
+    private int _bumpCount;
+
+    private LotLevel Lot => _session.Level.Level;
+
+    private int VehiclesLeft
+    {
+        get
+        {
+            int left = 0;
+            foreach (Vehicle vehicle in Lot.Vehicles)
+            {
+                if (!_session.State.HasExited(vehicle.Id))
+                {
+                    left++;
+                }
+            }
+
+            return left;
+        }
+    }
+
+    private string LotStyle => "grid-template-columns:repeat(" + N(Lot.Size.Width) + ",var(--cell));grid-template-rows:repeat(" + N(Lot.Size.Height) + ",var(--cell));";
+
+    protected override void OnInitialized() => Open(0);
+
+    private void Open(int index)
+    {
+        if (index < 0 || index >= Catalogue.All.Count)
+        {
+            return;
+        }
+
+        _levelIndex = index;
+        _session = new PlaySession(Catalogue.All[index]);
+    }
+
+    private void OnPick(ChangeEventArgs change)
+    {
+        if (int.TryParse(change.Value as string, NumberStyles.None, CultureInfo.InvariantCulture, out int index))
+        {
+            Open(index);
+        }
+    }
+
+    private void Tap(PieceId piece)
+    {
+        _session.Tap(piece);
+        if (_session.Bumped.HasValue)
+        {
+            _bumpCount++;
+        }
+    }
+
+    private void Retry() => _session.Retry();
+
+    /// <summary>A bumped vehicle gets a fresh key so its shake animation replays on every bump.</summary>
+    private string KeyOf(PieceId piece) =>
+        _session.Bumped.TryGet(out PieceId bumped) && bumped == piece ? "v" + N(piece.Value) + "-b" + N(_bumpCount) : "v" + N(piece.Value);
+
+    private string VehicleClass(Vehicle vehicle, bool covered, bool leaving)
+    {
+        string css = "vehicle";
+        if (covered)
+        {
+            css += " covered";
+        }
+
+        if (leaving)
+        {
+            css += " leaving to-" + FacingName(vehicle.Facing);
+        }
+
+        if (_session.Bumped.TryGet(out PieceId bumped) && bumped == vehicle.Id)
+        {
+            css += " bump";
+        }
+
+        if (_session.BumpedBy.TryGet(out Blocker? by) && by is Blocker.Piece blocker && blocker.Id == vehicle.Id)
+        {
+            css += " blocker";
+        }
+
+        return css;
+    }
+
+    private string VehicleStyle(Vehicle vehicle, bool covered)
+    {
+        int length = (int)vehicle.Length;
+        string area = vehicle.IsHorizontal ? Area(vehicle.Anchor, length, 1) : Area(vehicle.Anchor, 1, length);
+        string paint = covered ? "background:#8a8f98;color:#ffffff;" : "background:" + Palette.Css(vehicle.Colour) + ";color:" + Palette.Ink(vehicle.Colour) + ";";
+        return area + paint;
+    }
+
+    private string VehicleTitle(Vehicle vehicle, bool covered) =>
+        (covered ? "Covered vehicle" : Palette.Name(vehicle.Colour) + " vehicle") + ", facing " + FacingName(vehicle.Facing);
+
+    private string Area(LotCell cell, int columns, int rows) =>
+        "grid-row:" + N(Lot.Size.RowOf(cell).Value + 1) + "/span " + N(rows) + ";grid-column:" + N(Lot.Size.ColumnOf(cell).Value + 1) + "/span " + N(columns) + ";";
+
+    private IEnumerable<string> TagsOn(PieceId piece)
+    {
+        foreach (LotClue clue in Lot.Clues)
+        {
+            if (clue.On != piece)
+            {
+                continue;
+            }
+
+            yield return clue switch
+            {
+                LotClue.Not not => "not " + Palette.Letter(not.Colour),
+                LotClue.Ahead { Relation: AheadRelation.Same } => "= ahead",
+                LotClue.Ahead => "≠ ahead",
+                LotClue.Touch touch => "touches " + N(touch.Count) + " " + Palette.Letter(touch.Colour),
+                _ => "?",
+            };
+        }
+    }
+
+    private static string Arrow(Facing facing) => facing switch
+    {
+        Facing.North => "▲",
+        Facing.East => "▶",
+        Facing.South => "▼",
+        _ => "◀",
+    };
+
+    private static string FacingName(Facing facing) => facing switch
+    {
+        Facing.North => "north",
+        Facing.East => "east",
+        Facing.South => "south",
+        _ => "west",
+    };
+
+    private static string Stars(int stars) => new string('★', stars) + new string('☆', 3 - stars);
+
+    private static string N(int value) => value.ToString(CultureInfo.InvariantCulture);
+}

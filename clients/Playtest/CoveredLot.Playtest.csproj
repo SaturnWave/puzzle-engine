@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- Browser playtest client: runs the real engine (PuzzleCore, PuzzleCore.Jam) behind a Blazor Server UI.
+       A test harness, not the shipping client (that is Unity). Outside src/, so not an engine layer. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\PuzzleCore\PuzzleCore.csproj" />
+    <ProjectReference Include="..\..\src\PuzzleCore.Jam\PuzzleCore.Jam.csproj" />
+  </ItemGroup>
+
+</Project>
