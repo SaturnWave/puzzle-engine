@@ -1,0 +1,18 @@
+# Build output
+bin/
+obj/
+TestResults/
+*.user
+*.suo
+.vs/
+.idea/
+.vscode/
+*.binlog
+
+# Local tool output that is not a deliverable
+artifacts/local/
+
+# Agent worktrees and per-user agent settings
+.claude/worktrees/
+.claude/settings.local.json
+graphify-out/

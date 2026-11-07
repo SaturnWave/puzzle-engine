@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The single test project: golden, property and guard tests. Runs under a hostile culture (tr-TR by default). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>PuzzleCore.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\PuzzleCore\PuzzleCore.csproj" />
+    <ProjectReference Include="..\..\src\PuzzleCore.Jam\PuzzleCore.Jam.csproj" />
+    <ProjectReference Include="..\..\src\PuzzleCore.Cli\PuzzleCore.Cli.csproj" />
+  </ItemGroup>
+</Project>

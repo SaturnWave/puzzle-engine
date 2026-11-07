@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Command line: demo (text renderer), and later gen / validate / sim / bench / replay. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>PuzzleCore.Cli</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PuzzleCore\PuzzleCore.csproj" />
+    <ProjectReference Include="..\PuzzleCore.Jam\PuzzleCore.Jam.csproj" />
+  </ItemGroup>
+</Project>

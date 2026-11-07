@@ -1,0 +1,28 @@
+<Project>
+  <!--
+    Shared build settings for every project in the repository (ported from the Block engine).
+    Unity-bound projects additionally pin TargetFramework=netstandard2.1 and LangVersion=9.0
+    in their own project files; Directory.Build.targets checks the evaluated values of all of
+    this at build time.
+    InvariantGlobalization is deliberately not set: it silences the culture analyzers
+    (CA1304/CA1305/CA1307/CA1309/CA1310/CA1311), and Unity ignores it anyway.
+  -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <!-- Integer overflow throws instead of wrapping. Hash and RNG code opts out with explicit unchecked blocks. -->
+    <CheckForOverflowUnderflow>true</CheckForOverflowUnderflow>
+    <!-- Pinned with the SDK (global.json, rollForward=disable) so analyzer rules only change on purpose. -->
+    <AnalysisLevel>10.0-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Build output must not carry the checkout path: an absolute path would make DLL bytes
+         depend on where the repository was cloned. -->
+    <PathMap>$(MSBuildThisFileDirectory)=/_/</PathMap>
+    <EnableSourceLink>false</EnableSourceLink>
+    <EnableSourceControlManagerQueries>false</EnableSourceControlManagerQueries>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+</Project>

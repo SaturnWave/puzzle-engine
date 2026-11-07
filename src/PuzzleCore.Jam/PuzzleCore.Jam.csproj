@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Covered Lot rules: lot geometry, LotState, Exit, JamRules, LotLoader, pc-lot text.
+       Compiled into the Unity client: netstandard2.1, C# 9, no packages. Never references PuzzleCore.Sort. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <RootNamespace>PuzzleCore.Jam</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\Shared\IsExternalInit.cs" Link="Shared\IsExternalInit.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PuzzleCore\PuzzleCore.csproj" />
+  </ItemGroup>
+</Project>

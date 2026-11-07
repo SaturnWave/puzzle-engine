@@ -1,0 +1,6 @@
+# Line endings are part of determinism: hashes of documents, golden engine traces
+# and settings files must be identical on every operating system.
+* text=auto eol=lf
+*.pdf binary
+*.png binary
+*.dll binary
