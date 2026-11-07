@@ -6,8 +6,13 @@ namespace PuzzleCore.Cli
     {
         private static int Main(string[] arguments)
         {
-            Console.Out.Write("puzzle-engine CLI: no commands yet\n");
-            return arguments.Length == 0 ? 0 : 2;
+            if (arguments.Length == 1 && arguments[0] == "demo")
+            {
+                return DemoCommand.Run(Console.In, Console.Out);
+            }
+
+            Console.Error.Write("usage: PuzzleCore.Cli demo\n");
+            return 2;
         }
     }
 }
