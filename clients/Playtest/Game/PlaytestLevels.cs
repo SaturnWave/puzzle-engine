@@ -16,7 +16,7 @@ namespace CoveredLot.Playtest.Game
     /// </summary>
     public sealed class PlaytestLevels
     {
-        public const int CampaignSlots = 60;
+        public const int CampaignSlots = 80;
 
         private const string ExampleBoard =
             "pc-lot\nr=1\nsize=6x6\nbays=4\npillars=4\n"
@@ -39,11 +39,15 @@ namespace CoveredLot.Playtest.Game
             for (int index = 0; index < CampaignSlots; index++)
             {
                 var slot = new LevelIndex(index);
-                if (LotGenerator.Generate(pack, slot, LotContentPlan.For(slot)) is GenerateResult.Generated generated)
+                if (LotPackBuilder.Build(pack, slot) is BuildResult.Built built)
                 {
-                    string name = "Level " + (index + 1).ToString(CultureInfo.InvariantCulture)
-                        + " · " + generated.Lot.Level.Size.ToString();
-                    levels.Add(new PlaytestLevel(name, generated.Lot.Level, generated.Lot.PeakPar));
+                    string name = "Level " + (index + 1).ToString(CultureInfo.InvariantCulture) + " · " + built.Level.Level.Size.ToString();
+                    if (built.Level.Deduction.TryGet(out PuzzleCore.Search.DeductionGrade.Graded? grade))
+                    {
+                        name += " · covered " + grade.Rung.ToString();
+                    }
+
+                    levels.Add(new PlaytestLevel(name, built.Level.Level, built.Level.PeakPar));
                 }
             }
 

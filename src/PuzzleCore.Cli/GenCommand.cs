@@ -3,16 +3,21 @@ using System.Globalization;
 using System.IO;
 using PuzzleCore.Jam;
 using PuzzleCore.Randomness;
+using PuzzleCore.Search;
 
 namespace PuzzleCore.Cli
 {
     /// <summary>
-    /// "gen &lt;packId&gt; &lt;count&gt; [outDir]": generates plain levels 0..count-1 of a pack from the content plan
-    /// and prints one line per level (size, vehicles, bays, PeakPar, slack, tries). With outDir it writes
-    /// each level as &lt;outDir&gt;/&lt;index&gt;.pc-lot. Exit code 1 if any level was rejected.
+    /// "gen &lt;packId&gt; &lt;count&gt; [outDir]": builds campaign slots 0..count-1 of a pack through
+    /// <see cref="LotPackBuilder"/> and prints one line per level: size, vehicles, bays, PeakPar, slack,
+    /// the random-play fail rate, the greedy-habit win rate and, on covered levels, covers, tags and the
+    /// deduction grade. With outDir it writes each level as &lt;outDir&gt;/&lt;index&gt;.pc-lot.
+    /// Exit code 1 if any slot was rejected.
     /// </summary>
     internal static class GenCommand
     {
+        private const int GreedyPlayouts = 200;
+
         public static int Run(string packText, string countText, string? outDirectory, TextWriter output)
         {
             if (!PackId.Parse(packText).TryGet(out PackId pack) || !int.TryParse(countText, NumberStyles.None, CultureInfo.InvariantCulture, out int count))
@@ -27,62 +32,49 @@ namespace PuzzleCore.Cli
             }
 
             int rejected = 0;
-            int totalTries = 0;
             Stopwatch clock = Stopwatch.StartNew();
             for (int index = 0; index < count; index++)
             {
-                var level = new LevelIndex(index);
-                LotPlan plan = LotContentPlan.For(level);
-                switch (LotGenerator.Generate(pack, level, plan))
+                var slot = new LevelIndex(index);
+                switch (LotPackBuilder.Build(pack, slot))
                 {
-                    case GenerateResult.Generated generated:
-                        GeneratedLot lot = generated.Lot;
-                        totalTries += lot.Tries;
-                        output.Write(string.Concat(
-                            Number(index).PadLeft(4), "  ", lot.Level.Size.ToString(), "  vehicles=", Number(lot.Level.VehicleCount),
-                            "  bays=", lot.Level.Bays.ToString(), "  peakPar=", lot.PeakPar.ToString(), "  slack=", Number(lot.Slack),
-                            "  tries=", Number(lot.Tries),
-                            "  randomFail=", Number(LotPlayouts.DeadEnd(lot.Level, pack, level, LotPlayouts.DefaultPlayouts).Value / 10), "%",
-                            "  greedyWin=", Number(LotPlayouts.GreedyWins(lot.Level, pack, level, 200).Value / 10), "%\n"));
+                    case BuildResult.Built built:
+                        output.Write(Line(index, built.Level, pack, slot));
                         if (outDirectory is not null)
                         {
-                            File.WriteAllText(Path.Combine(outDirectory, Number(index).PadLeft(4, '0') + ".pc-lot"), LotText.Write(lot.Level));
+                            File.WriteAllText(Path.Combine(outDirectory, Number(index).PadLeft(4, '0') + ".pc-lot"), LotText.Write(built.Level.Level));
                         }
 
                         break;
-                    case GenerateResult.Rejected failed:
+                    case BuildResult.Rejected failed:
                         rejected++;
-                        totalTries += LotGenerator.TriesPerSlot;
-                        output.Write(Number(index).PadLeft(4) + "  REJECTED  " + Histogram(failed.Tries) + "\n");
+                        output.Write(Number(index).PadLeft(4) + "  REJECTED  " + failed.Reason.ToString() + "\n");
                         break;
                 }
             }
 
             output.Write(string.Concat(
-                "generated ", Number(count - rejected), "/", Number(count), ", tries ", Number(totalTries),
-                ", ", clock.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture), " ms\n"));
+                "built ", Number(count - rejected), "/", Number(count), ", ",
+                clock.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture), " ms\n"));
             return rejected == 0 ? 0 : 1;
         }
 
-        /// <summary>How many tries failed each gate, for example "TooFewBlocked=12 SlackOutOfBand=8".</summary>
-        private static string Histogram(ReadOnlyArray<TryFailure> tries)
+        private static string Line(int index, BuiltLevel built, PackId pack, LevelIndex slot)
         {
-            var counts = new int[(int)TryFailure.WitnessUnsolvable + 1];
-            foreach (TryFailure failure in tries)
+            LotLevel level = built.Level;
+            string line = string.Concat(
+                Number(index).PadLeft(4), "  ", level.Size.ToString(), "  n=", Number(level.VehicleCount),
+                "  bays=", level.Bays.ToString(), "  par=", built.PeakPar.ToString(), "  slack=", Number(built.Slack),
+                "  randomFail=", Number(LotPlayouts.DeadEnd(level, pack, slot, LotPlayouts.DefaultPlayouts).Value / 10), "%",
+                "  greedyWin=", Number(LotPlayouts.GreedyWins(level, pack, slot, GreedyPlayouts).Value / 10), "%");
+            if (built.Deduction.TryGet(out DeductionGrade.Graded? grade))
             {
-                counts[(int)failure]++;
+                line += string.Concat(
+                    "  COVERED covers=", Number(new LotClues(level).HiddenCells.Count), " tags=", Number(level.Clues.Count),
+                    " rung=", grade.Rung.ToString(), " steps=", grade.Steps.ToString());
             }
 
-            var text = new System.Text.StringBuilder();
-            for (int reason = 0; reason < counts.Length; reason++)
-            {
-                if (counts[reason] > 0)
-                {
-                    text.Append(((TryFailure)reason).ToString()).Append('=').Append(Number(counts[reason])).Append(' ');
-                }
-            }
-
-            return text.ToString().TrimEnd();
+            return line + "\n";
         }
 
         private static string Number(int value) => value.ToString(CultureInfo.InvariantCulture);

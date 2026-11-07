@@ -1,11 +1,16 @@
+using PuzzleCore.Search;
+
 namespace PuzzleCore.Jam
 {
     /// <summary>
-    /// The plain campaign's difficulty ramp: lot size, colours, sets, bays and the slack band by
-    /// level index. Starting values to tune from bot and playtest data; every number is an estimate.
+    /// The campaign ramp: lot size, colours, sets, bays and the slack band by level index, plus which
+    /// levels are covered. Starting values to tune from bot and playtest data; every number is an estimate.
     /// </summary>
     public static class LotContentPlan
     {
+        /// <summary>About 20 plain levels teach the loop before the first covered level (onboarding).</summary>
+        public const int FirstCoveredLevel = 20;
+
         public static LotPlan For(LevelIndex level)
         {
             int index = level.Value;
@@ -25,6 +30,29 @@ namespace PuzzleCore.Jam
             }
 
             return new LotPlan(8, 8, Colours: 5, Sets: 7, Bays: 5, MinSlack: 0, MaxSlack: 1, VanShare: new PerMille(250), Pillars: 3, MinBlocked: new PerMille(450));
+        }
+
+        /// <summary>
+        /// About 1 level in 5 is covered, from level 20 on (the sawtooth's "think" levels). The cover count
+        /// and the hardest deduction allowed grow with the level.
+        /// </summary>
+        public static Option<CoverPlan> CoversFor(LevelIndex level)
+        {
+            int index = level.Value;
+            bool isCovered = index >= FirstCoveredLevel && index % 5 == 4;
+            if (!isCovered)
+            {
+                return Option.None<CoverPlan>();
+            }
+
+            if (index < 40)
+            {
+                return Option.Some(new CoverPlan(2, DeductionRung.D1));
+            }
+
+            return index < 60
+                ? Option.Some(new CoverPlan(3, DeductionRung.D2))
+                : Option.Some(new CoverPlan(4, DeductionRung.D3));
         }
     }
 }
