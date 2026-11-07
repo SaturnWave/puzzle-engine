@@ -41,7 +41,9 @@ namespace PuzzleCore.Cli
                         output.Write(string.Concat(
                             Number(index).PadLeft(4), "  ", lot.Level.Size.ToString(), "  vehicles=", Number(lot.Level.VehicleCount),
                             "  bays=", lot.Level.Bays.ToString(), "  peakPar=", lot.PeakPar.ToString(), "  slack=", Number(lot.Slack),
-                            "  tries=", Number(lot.Tries), "\n"));
+                            "  tries=", Number(lot.Tries),
+                            "  randomFail=", Number(LotPlayouts.DeadEnd(lot.Level, pack, level, LotPlayouts.DefaultPlayouts).Value / 10), "%",
+                            "  greedyWin=", Number(LotPlayouts.GreedyWins(lot.Level, pack, level, 200).Value / 10), "%\n"));
                         if (outDirectory is not null)
                         {
                             File.WriteAllText(Path.Combine(outDirectory, Number(index).PadLeft(4, '0') + ".pc-lot"), LotText.Write(lot.Level));
