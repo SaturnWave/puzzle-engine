@@ -1,0 +1,26 @@
+{
+  "format": "pc-record",
+  "formatVersion": 1,
+  "game": "Jam",
+  "mode": "Campaign",
+  "rulesVersion": 1,
+  "level": {
+    "packId": "golden-jam",
+    "levelId": "six-by-six",
+    "fingerprint": "de8ba3a9518814626c5c5f8055c01f037ef25830e0862bb9ead477c821bf9c6b"
+  },
+  "actions": [
+    { "t": "Move", "piece": 0, "sincePreviousMs": 1000 },
+    { "t": "Move", "piece": 1, "sincePreviousMs": 1000 },
+    { "t": "Move", "piece": 8, "sincePreviousMs": 1000 },
+    { "t": "Move", "piece": 3, "sincePreviousMs": 1000 },
+    { "t": "Rewind", "n": 2, "sincePreviousMs": 4000 },
+    { "t": "Move", "piece": 3, "sincePreviousMs": 1000 },
+    { "t": "Move", "piece": 4, "sincePreviousMs": 1000 },
+    { "t": "Move", "piece": 2, "sincePreviousMs": 1000 },
+    { "t": "Move", "piece": 8, "sincePreviousMs": 1000 },
+    { "t": "Move", "piece": 5, "sincePreviousMs": 1000 },
+    { "t": "Move", "piece": 6, "sincePreviousMs": 1000 },
+    { "t": "Move", "piece": 7, "sincePreviousMs": 1000 }
+  ]
+}

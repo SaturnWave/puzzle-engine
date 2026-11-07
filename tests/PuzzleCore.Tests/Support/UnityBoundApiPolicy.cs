@@ -91,6 +91,8 @@ namespace PuzzleCore.Tests.Support
                 "System.Array", "System.Math", "System.Nullable`1", "System.Index", "System.Range", "System.MemoryExtensions",
                 "System.Span`1", "System.ReadOnlySpan`1", "System.IEquatable`1", "System.IComparable", "System.IComparable`1",
                 "System.IDisposable", "System.IFormatProvider", "System.StringComparison", "System.StringComparer",
+                // An options enum of string.Split (the char overload takes it as an optional argument); no culture or platform input.
+                "System.StringSplitOptions",
                 "System.ValueTuple`2", "System.ValueTuple`3", "System.ValueTuple`4",
                 "System.Func`1", "System.Func`2", "System.Func`3", "System.Func`4", "System.Func`5",
                 "System.Action", "System.Action`1", "System.Action`2", "System.Action`3", "System.Predicate`1", "System.Comparison`1",

@@ -72,6 +72,8 @@ namespace PuzzleCore.Jam
         public Option<LotState> TryWithOneSpare(in LotState state) =>
             state.Capacity.PlusOneSpare().TryGet(out BayCount more) ? Option.Some(state.WithCapacity(more)) : Option.None<LotState>();
 
+        public CapacityCount CapacityOf(in LotState state) => state.Capacity.AsCapacity;
+
         /// <summary>Whether the vehicle is still under its cover in this state.</summary>
         public bool IsCovered(in LotState state, PieceId piece) => Level.VehicleOf(piece).StartsCovered && !state.HasExited(piece);
 

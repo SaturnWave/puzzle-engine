@@ -71,5 +71,8 @@ namespace PuzzleCore.Rules
 
         /// <summary>The state with one more spare (Sort: an empty vial; Jam: a slot), or None at the packing limit.</summary>
         Option<TState> TryWithOneSpare(in TState state);
+
+        /// <summary>The capacity now in play (Sort: vials; Jam: holding slots), spare included. Added to the brief's sketch for SpareAdded.</summary>
+        CapacityCount CapacityOf(in TState state);
     }
 }

@@ -1,0 +1,225 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using PuzzleCore.Jam;
+using PuzzleCore.Play;
+using PuzzleCore.Randomness;
+using PuzzleCore.Records;
+using PuzzleCore.Rules;
+using PuzzleCore.Tests.Support;
+using Xunit;
+using static PuzzleCore.Tests.Jam.Boards;
+
+namespace PuzzleCore.Tests.Jam
+{
+    /// <summary>Golden replays, the record format, the validator's mode checks and the rewind property (shared engine §4).</summary>
+    public sealed class JamReplayTests
+    {
+        private static readonly LevelRef SixBySixRef = new(
+            PackId.Parse("golden-jam").Or(default),
+            LevelId.Parse("six-by-six").Or(default),
+            LevelFingerprint.Parse(LotTextTests.SixBySixFingerprint).Or(default));
+
+        [Fact]
+        public void The_hand_written_winning_record_replays_to_valid_won()
+        {
+            ReplayReport report = ReplayGolden("six-by-six-win.pc-record.json");
+
+            Assert.Equal(new ReplayVerdict.Valid(new Outcome.Won(), new MoveCount(9), SpareUsed: false), report.Verdict);
+            Assert.Equal(15, report.Events.Count); // 9 exits, 2 covers lifted, 3 sets, 1 win
+            Assert.Equal(new PuzzleEvent.Won(), report.Events[report.Events.Count - 1]);
+        }
+
+        [Fact]
+        public void The_hand_written_rescue_record_fails_rewinds_two_moves_and_wins()
+        {
+            ReplayReport report = ReplayGolden("six-by-six-rescue.pc-record.json");
+
+            Assert.Equal(new ReplayVerdict.Valid(new Outcome.Won(), new MoveCount(9), SpareUsed: false), report.Verdict);
+            Assert.Contains(new PuzzleEvent.Failed(FailKind.SlotsFull), report.Events);
+            Assert.Contains(new PuzzleEvent.Rewound(new MoveCount(2)), report.Events);
+        }
+
+        [Fact]
+        public void Both_golden_records_end_in_the_same_won_state()
+        {
+            Assert.Equal(ReplayGolden("six-by-six-win.pc-record.json").Final, ReplayGolden("six-by-six-rescue.pc-record.json").Final);
+        }
+
+        [Fact]
+        public void A_record_written_and_read_back_is_unchanged_and_canonical()
+        {
+            ActionRecord<Exit> record = ReadGolden("six-by-six-win.pc-record.json");
+
+            string written = RecordJson.Write(record, ExitJson.Instance);
+            var reread = Assert.IsType<RecordReadResult<Exit>.Read>(RecordJson.Read(written, ExitJson.Instance)).Record;
+
+            Assert.Equal(written, RecordJson.Write(reread, ExitJson.Instance));
+            Assert.StartsWith("{\"actions\":[{\"piece\":0,\"sincePreviousMs\":2100,\"t\":\"Move\"}", written, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Unknown_fields_and_a_foreign_game_are_rejected()
+        {
+            string golden = File.ReadAllText(GoldenPath("six-by-six-win.pc-record.json"));
+
+            Assert.IsType<RecordReadResult<Exit>.Invalid>(RecordJson.Read(golden.Replace("\"rulesVersion\": 1,", "\"rulesVersion\": 1, \"cheat\": true,", StringComparison.Ordinal), ExitJson.Instance));
+            Assert.IsType<RecordReadResult<Exit>.Invalid>(RecordJson.Read(golden.Replace("\"Jam\"", "\"Sort\"", StringComparison.Ordinal), ExitJson.Instance));
+            Assert.IsType<RecordReadResult<Exit>.UnsupportedVersion>(RecordJson.Read(golden.Replace("\"formatVersion\": 1", "\"formatVersion\": 2", StringComparison.Ordinal), ExitJson.Instance));
+        }
+
+        [Fact]
+        public void An_illegal_move_injected_into_a_winning_line_is_invalid_at_that_index()
+        {
+            var actions = new List<RecordAction<Exit>>(ReadGolden("six-by-six-win.pc-record.json").Actions);
+            actions.Insert(3, MoveOf(6)); // R^ is still behind Y> (piece 2) at this point
+
+            ReplayReport report = RunCampaign(actions);
+
+            Assert.Equal(new ReplayVerdict.Invalid(new ActionIndex(3), InvalidReason.IllegalMove), report.Verdict);
+        }
+
+        [Theory]
+        [InlineData(PlayMode.DailyProof)]
+        [InlineData(PlayMode.Casebook)]
+        [InlineData(PlayMode.WeeklyTwist)]
+        [InlineData(PlayMode.Competitive)]
+        public void Boosters_outside_campaign_are_refused_before_anything_else(PlayMode mode)
+        {
+            foreach (RecordAction<Exit> booster in new RecordAction<Exit>[] { Spare(), RewindOf(1), Insight(3) })
+            {
+                ReplayReport report = Replay.Run(Rules(), Rules().Start, mode, ReadOnlyArray.Of(MoveOf(0), booster));
+
+                Assert.Equal(new ReplayVerdict.Invalid(new ActionIndex(1), InvalidReason.BoosterInCompetitiveMode), report.Verdict);
+            }
+        }
+
+        [Fact]
+        public void A_spare_or_rewind_while_still_in_play_is_refused()
+        {
+            Assert.Equal(InvalidReason.SpareOutsideFail, Reason(RunCampaign(MoveOf(0), Spare())));
+            Assert.Equal(InvalidReason.RewindOutsideFail, Reason(RunCampaign(MoveOf(0), RewindOf(1))));
+        }
+
+        [Fact]
+        public void A_second_spare_in_one_attempt_is_refused()
+        {
+            // Four free cars fill four bays; the spare makes five, then two more misplaced cars fill them again.
+            var rules = new JamRules(Load(FreeCars(4, Blue, Red, Yellow, Blue, Red, Yellow, Blue, Red, Yellow)));
+
+            ReplayReport report = Replay.Run(rules, rules.Start, PlayMode.Campaign,
+                ReadOnlyArray.Of(MoveOf(0), MoveOf(1), MoveOf(2), MoveOf(4), Spare(), MoveOf(5), Spare()));
+
+            Assert.Equal(new ReplayVerdict.Invalid(new ActionIndex(6), InvalidReason.SecondSpare), report.Verdict);
+        }
+
+        [Fact]
+        public void A_rewind_outside_one_to_five_or_beyond_the_line_is_out_of_range()
+        {
+            var rules = new JamRules(Load(FreeCars(4, Blue, Red, Yellow, Blue, Red, Yellow, Blue, Red, Yellow)));
+            ReadOnlyArray<RecordAction<Exit>> fail = ReadOnlyArray.Of(MoveOf(0), MoveOf(1), MoveOf(2), MoveOf(4));
+
+            foreach (int moves in new[] { 0, 5, 6 })
+            {
+                var actions = new List<RecordAction<Exit>>(fail) { RewindOf(moves) };
+                ReplayReport report = Replay.Run(rules, rules.Start, PlayMode.Campaign, ReadOnlyArray.CopyOf(actions));
+
+                Assert.Equal(new ReplayVerdict.Invalid(new ActionIndex(4), InvalidReason.RewindOutOfRange), report.Verdict);
+            }
+        }
+
+        [Fact]
+        public void A_second_insight_and_any_action_after_the_win_are_refused()
+        {
+            Assert.Equal(InvalidReason.InsightLimit, Reason(RunCampaign(Insight(3), Insight(7))));
+
+            var afterWin = new List<RecordAction<Exit>>(ReadGolden("six-by-six-win.pc-record.json").Actions) { MoveOf(0) };
+            Assert.Equal(InvalidReason.ActionAfterEnd, Reason(RunCampaign(afterWin)));
+            Assert.Equal(InvalidReason.ActionAfterEnd, Reason(RunCampaign(MoveOf(0), new RecordAction<Exit>.Concede(Ms()), MoveOf(1))));
+        }
+
+        [Fact]
+        public void A_spare_taken_before_a_rewind_stays_taken()
+        {
+            var rules = new JamRules(Load(FreeCars(4, Blue, Red, Yellow, Blue, Red, Yellow, Blue, Red, Yellow)));
+            var attempt = new Attempt<LotState, Exit, ExitRejection>(rules, rules.Start, PlayMode.Campaign);
+            foreach (int piece in new[] { 0, 1, 2, 4 })
+            {
+                attempt.Move(new Exit(new PieceId((byte)piece)));
+            }
+
+            attempt.TakeSpare();
+            attempt.Move(new Exit(new PieceId(5)));
+            Assert.IsType<Outcome.Failed>(attempt.Outcome);
+
+            Assert.IsType<StepResult<ExitRejection>.Done>(attempt.Rewind(new MoveCount(4)));
+
+            Assert.Equal(5, attempt.Current.Capacity.Value);
+            Assert.True(attempt.SpareUsed);
+        }
+
+        [Fact]
+        public void Rewind_restores_the_exact_earlier_state_and_the_seen_set_only_grows()
+        {
+            // Property over seeded random legal lines on the 6×6 board.
+            for (int run = 0; run < 200; run++)
+            {
+                Pcg32 random = Pcg32.Seeded((ulong)run, 7UL);
+                JamRules rules = Rules();
+                var attempt = new Attempt<LotState, Exit, ExitRejection>(rules, rules.Start, PlayMode.Campaign);
+                var keys = new List<ExactKey> { attempt.Current.Exact };
+                while (attempt.Outcome is Outcome.InPlay)
+                {
+                    var moves = new List<Exit>();
+                    rules.AppendLegalMoves(attempt.Current, moves);
+                    attempt.Move(moves[random.NextIndex(moves.Count)]);
+                    keys.Add(attempt.Current.Exact);
+                }
+
+                if (!(attempt.Outcome is Outcome.Failed))
+                {
+                    continue;
+                }
+
+                ulong seenBefore = attempt.Seen.Mask;
+                int back = 1 + random.NextIndex(Math.Min(Attempt<LotState, Exit, ExitRejection>.MaxRewind, attempt.Moves.Value));
+                attempt.Rewind(new MoveCount(back));
+
+                Assert.Equal(keys[keys.Count - 1 - back], attempt.Current.Exact);
+                Assert.Equal(seenBefore, attempt.Seen.Mask & seenBefore);
+            }
+        }
+
+        private static JamRules Rules() => new(Load(SixBySix()));
+
+        private static ReplayReport ReplayGolden(string file)
+        {
+            ActionRecord<Exit> record = ReadGolden(file);
+            Assert.Equal(SixBySixRef, record.Level);
+            JamRules rules = Rules();
+            return Replay.Run(rules, rules.Start, record.Mode, record.Actions);
+        }
+
+        private static ActionRecord<Exit> ReadGolden(string file) =>
+            Assert.IsType<RecordReadResult<Exit>.Read>(RecordJson.Read(File.ReadAllText(GoldenPath(file)), ExitJson.Instance)).Record;
+
+        private static string GoldenPath(string file) => RepositoryLayout.FullPath("packs/jam/golden/" + file);
+
+        private static ReplayReport RunCampaign(params RecordAction<Exit>[] actions) => RunCampaign((IEnumerable<RecordAction<Exit>>)actions);
+
+        private static ReplayReport RunCampaign(IEnumerable<RecordAction<Exit>> actions) =>
+            Replay.Run(Rules(), Rules().Start, PlayMode.Campaign, ReadOnlyArray.CopyOf(actions));
+
+        private static InvalidReason Reason(ReplayReport report) => Assert.IsType<ReplayVerdict.Invalid>(report.Verdict).Reason;
+
+        private static ElapsedMs Ms() => new(500);
+
+        private static RecordAction<Exit> MoveOf(int piece) => new RecordAction<Exit>.Move(new Exit(new PieceId((byte)piece)), Ms());
+
+        private static RecordAction<Exit> RewindOf(int moves) => new RecordAction<Exit>.Rewind(new MoveCount(moves), Ms());
+
+        private static RecordAction<Exit> Spare() => new RecordAction<Exit>.TakeSpare(Ms());
+
+        private static RecordAction<Exit> Insight(int cell) => new RecordAction<Exit>.UseInsight(new HiddenCell((byte)cell), Ms());
+    }
+}
