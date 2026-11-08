@@ -83,6 +83,10 @@ namespace PuzzleCore.Play
         // The line index at which the spare was added; a rewind behind it re-adds the spare.
         private int _spareAtIndex = -1;
 
+        // Under RewindFence.AtReveal, the line index of the state after the last move that revealed
+        // a hidden cell; 0 (the start) while there is none. RewindLimit never reaches behind it.
+        private int _fenceIndex;
+
         public Attempt(IPuzzleRules<TState, TMove, TRejection> rules, TState start, PlayMode mode)
         {
             _rules = rules;
@@ -98,6 +102,15 @@ namespace PuzzleCore.Play
 
         /// <summary>Moves on the current line (rewound moves are not counted).</summary>
         public MoveCount Moves => new MoveCount(_line.Count - 1);
+
+        /// <summary>
+        /// The longest rewind length the current line allows: <see cref="MaxRewind"/> moves, capped by
+        /// the moves on the line and, under <see cref="RewindFence.AtReveal"/>, by the moves since the
+        /// last reveal. Like <see cref="PeekRewind"/> it ignores the mode and the outcome;
+        /// <see cref="Rewind"/> also needs a Campaign fail. The fail screen's picker offers 1 to this;
+        /// 0 means no length is in range.
+        /// </summary>
+        public MoveCount RewindLimit => new MoveCount(System.Math.Min(MaxRewind, Moves.Value - _fenceIndex));
 
         public bool SpareUsed => _spareAtIndex >= 0;
 
@@ -160,8 +173,9 @@ namespace PuzzleCore.Play
         }
 
         /// <summary>
-        /// Back <paramref name="moves"/> moves (1-5) to the exact earlier state, on a fail only
-        /// (Campaign only). A spare already taken stays taken.
+        /// Back <paramref name="moves"/> moves (1 to <see cref="RewindLimit"/>) to the exact earlier
+        /// state, on a fail only (Campaign only). A spare already taken stays taken, and the fence
+        /// stays where it is, since the rewind cannot reach behind it.
         /// </summary>
         public StepResult<TRejection> Rewind(MoveCount moves)
         {
@@ -193,12 +207,12 @@ namespace PuzzleCore.Play
 
         /// <summary>
         /// The state a rewind of <paramref name="moves"/> would restore (the spare kept), without
-        /// changing the attempt; None when the length is outside 1-5 or beyond the line. Lets an
-        /// offer check whether some rewind can still win before it is shown.
+        /// changing the attempt; None when the length is outside 1 to <see cref="RewindLimit"/>.
+        /// Lets an offer check whether some rewind can still win before it is shown.
         /// </summary>
         public Option<TState> PeekRewind(MoveCount moves)
         {
-            bool isInRange = moves.Value >= 1 && moves.Value <= MaxRewind && moves.Value <= Moves.Value;
+            bool isInRange = moves.Value >= 1 && moves.Value <= RewindLimit.Value;
             if (!isInRange)
             {
                 return Option.None<TState>();
@@ -255,6 +269,10 @@ namespace PuzzleCore.Play
             return HasEnded ? Option.Some(InvalidReason.ActionAfterEnd) : Option.None<InvalidReason>();
         }
 
+        /// <summary>
+        /// Records what the move just added to the line revealed: the SeenSet grows, and under
+        /// <see cref="RewindFence.AtReveal"/> the fence moves up to this move. Sort's LayerRevealed joins here.
+        /// </summary>
         private void Observe(ReadOnlyArray<PuzzleEvent> events)
         {
             foreach (PuzzleEvent item in events)
@@ -262,6 +280,10 @@ namespace PuzzleCore.Play
                 if (item is PuzzleEvent.CoverLifted lifted)
                 {
                     Seen = Seen.With(new HiddenCell(lifted.Piece.Value));
+                    if (_rules.RewindFence == RewindFence.AtReveal)
+                    {
+                        _fenceIndex = _line.Count - 1;
+                    }
                 }
             }
         }

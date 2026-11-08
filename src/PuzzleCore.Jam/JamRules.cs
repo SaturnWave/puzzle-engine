@@ -74,6 +74,12 @@ namespace PuzzleCore.Jam
 
         public CapacityCount CapacityOf(in LotState state) => state.Capacity.AsCapacity;
 
+        /// <summary>
+        /// A rewind may go back past a lifted cover, which stays drawn as lifted (the SeenSet).
+        /// Sealed Vials open question 8 asks whether Covered Lot adopts the AtReveal fence instead.
+        /// </summary>
+        public RewindFence RewindFence => RewindFence.None;
+
         /// <summary>Whether the vehicle is still under its cover in this state.</summary>
         public bool IsCovered(in LotState state, PieceId piece) => Level.VehicleOf(piece).StartsCovered && !state.HasExited(piece);
 

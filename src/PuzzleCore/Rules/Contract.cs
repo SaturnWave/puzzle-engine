@@ -39,6 +39,22 @@ namespace PuzzleCore.Rules
         public sealed record Failed(FailKind Kind) : Outcome;
     }
 
+    /// <summary>
+    /// How far back a rewind may reach on the current line. A game rule, because it decides which
+    /// recorded rewinds are valid. Closed set.
+    /// </summary>
+    public enum RewindFence
+    {
+        /// <summary>Back up to <c>Attempt.MaxRewind</c> moves, within the current line.</summary>
+        None,
+
+        /// <summary>
+        /// As <see cref="None"/>, but never back past the last move that revealed a hidden cell, so a
+        /// rewind sells planning and never a second look (Sealed Vials review, 2026-11-08).
+        /// </summary>
+        AtReveal,
+    }
+
     /// <summary>The result of trying one move: Applied(next, events) or Illegal(reason). Illegal moves cost nothing.</summary>
     public abstract record MoveResult<TState, TRejection>
         where TState : struct
@@ -74,5 +90,11 @@ namespace PuzzleCore.Rules
 
         /// <summary>The capacity now in play (Sort: vials; Jam: holding slots), spare included. Added to the brief's sketch for SpareAdded.</summary>
         CapacityCount CapacityOf(in TState state);
+
+        /// <summary>
+        /// How far back a rewind may reach. Added to the brief's sketch: the Sealed Vials review of
+        /// 2026-11-08 makes the rewind limit an input from each game.
+        /// </summary>
+        RewindFence RewindFence { get; }
     }
 }

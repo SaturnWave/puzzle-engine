@@ -183,7 +183,7 @@ namespace PuzzleCore.Records
             public override ElapsedMs SincePrevious { get; } = SincePrevious;
         }
 
-        /// <summary>Back <paramref name="Moves"/> Move actions (1-5), on the fail screen only.</summary>
+        /// <summary>Back <paramref name="Moves"/> Move actions (1 to the attempt's RewindLimit, at most 5), on the fail screen only.</summary>
         public sealed record Rewind(MoveCount Moves, ElapsedMs SincePrevious) : RecordAction<TMove>
         {
             public override ElapsedMs SincePrevious { get; } = SincePrevious;

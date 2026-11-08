@@ -84,6 +84,7 @@ namespace PuzzleCore.Tests.Jam
         [InlineData(PlayMode.Casebook)]
         [InlineData(PlayMode.WeeklyTwist)]
         [InlineData(PlayMode.Competitive)]
+        [InlineData(PlayMode.Siege)]
         public void Boosters_outside_campaign_are_refused_before_anything_else(PlayMode mode)
         {
             foreach (RecordAction<Exit> booster in new RecordAction<Exit>[] { Spare(), RewindOf(1), Insight(3) })
@@ -136,6 +137,24 @@ namespace PuzzleCore.Tests.Jam
             var afterWin = new List<RecordAction<Exit>>(ReadGolden("six-by-six-win.pc-record.json").Actions) { MoveOf(0) };
             Assert.Equal(InvalidReason.ActionAfterEnd, Reason(RunCampaign(afterWin)));
             Assert.Equal(InvalidReason.ActionAfterEnd, Reason(RunCampaign(MoveOf(0), new RecordAction<Exit>.Concede(Ms()), MoveOf(1))));
+        }
+
+        [Fact]
+        public void Every_kind_of_action_after_a_win_or_a_concede_is_refused()
+        {
+            var won = new List<RecordAction<Exit>>(ReadGolden("six-by-six-win.pc-record.json").Actions);
+            var conceded = new List<RecordAction<Exit>> { MoveOf(0), new RecordAction<Exit>.Concede(Ms()) };
+            var lateActions = new RecordAction<Exit>[] { MoveOf(1), Spare(), RewindOf(1), Insight(3), new RecordAction<Exit>.Concede(Ms()) };
+
+            foreach (List<RecordAction<Exit>> ended in new[] { won, conceded })
+            {
+                foreach (RecordAction<Exit> late in lateActions)
+                {
+                    ReplayReport report = RunCampaign(new List<RecordAction<Exit>>(ended) { late });
+
+                    Assert.Equal(new ReplayVerdict.Invalid(new ActionIndex(ended.Count), InvalidReason.ActionAfterEnd), report.Verdict);
+                }
+            }
         }
 
         [Fact]
