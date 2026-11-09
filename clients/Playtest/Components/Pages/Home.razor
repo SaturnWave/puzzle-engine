@@ -140,7 +140,7 @@
                     {
                         <div class="rewind">
                             Rewind
-                            @for (int moves = 1; moves <= Math.Min(5, Lot.VehicleCount - VehiclesLeft); moves++)
+                            @for (int moves = 1; moves <= _session.RewindLimit; moves++)
                             {
                                 int length = moves;
                                 <button class="btn small" @onclick="() => _session.Rewind(length)">@N(length)</button>

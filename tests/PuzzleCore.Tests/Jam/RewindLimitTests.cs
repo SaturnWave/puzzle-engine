@@ -245,19 +245,6 @@ namespace PuzzleCore.Tests.Jam
             Assert.True(rewindsAfterALift > 0, "No rewind came after a cover had lifted, so the state check never ran.");
         }
 
-        /// <summary>A free-cars board (B R Y three times, four bays) with these cars under covers.</summary>
-        private static LotLevel FreeCarsWithCoversOn(params int[] pieces)
-        {
-            LotDefinition plain = FreeCars(4, Blue, Red, Yellow, Blue, Red, Yellow, Blue, Red, Yellow);
-            var vehicles = new List<VehicleSpec>(plain.Vehicles);
-            foreach (int piece in pieces)
-            {
-                vehicles[piece] = vehicles[piece] with { StartsCovered = true };
-            }
-
-            return Load(plain with { Vehicles = ReadOnlyArray.CopyOf(vehicles) });
-        }
-
         /// <summary>The covered cars that have left the lot in this state, so their covers have lifted.</summary>
         private static List<PieceId> CoveredCarsGone(LotLevel level, LotState state)
         {
@@ -302,25 +289,5 @@ namespace PuzzleCore.Tests.Jam
         private static RecordAction<Exit> RewindOf(int moves) => new RecordAction<Exit>.Rewind(new MoveCount(moves), new ElapsedMs(500));
 
         private static RecordAction<Exit> InsightOn(int cell) => new RecordAction<Exit>.UseInsight(new HiddenCell((byte)cell), new ElapsedMs(500));
-
-        /// <summary>The Jam rules with the AtReveal fence switched on: Covered Lot as it would play if it adopted the fence.</summary>
-        private sealed class FencedJamRules : IPuzzleRules<LotState, Exit, ExitRejection>
-        {
-            private readonly JamRules _jam;
-
-            public FencedJamRules(LotLevel level) => _jam = new JamRules(level);
-
-            public RewindFence RewindFence => RewindFence.AtReveal;
-
-            public void AppendLegalMoves(in LotState state, List<Exit> into) => _jam.AppendLegalMoves(state, into);
-
-            public MoveResult<LotState, ExitRejection> TryApply(in LotState state, Exit move) => _jam.TryApply(state, move);
-
-            public Outcome Evaluate(in LotState state) => _jam.Evaluate(state);
-
-            public Option<LotState> TryWithOneSpare(in LotState state) => _jam.TryWithOneSpare(state);
-
-            public CapacityCount CapacityOf(in LotState state) => _jam.CapacityOf(state);
-        }
     }
 }

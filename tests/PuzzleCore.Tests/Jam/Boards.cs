@@ -50,6 +50,42 @@ namespace PuzzleCore.Tests.Jam
             return new LotDefinition(5, 5, bays, ReadOnlyArray.Empty<int>(), ReadOnlyArray.CopyOf(vehicles), ReadOnlyArray.Empty<LotClue>());
         }
 
+        /// <summary>The free-cars board B R Y three times with four bays, with these cars under covers.</summary>
+        public static LotLevel FreeCarsWithCoversOn(params int[] pieces)
+        {
+            LotDefinition plain = FreeCars(4, Blue, Red, Yellow, Blue, Red, Yellow, Blue, Red, Yellow);
+            var vehicles = new List<VehicleSpec>(plain.Vehicles);
+            foreach (int piece in pieces)
+            {
+                vehicles[piece] = vehicles[piece] with { StartsCovered = true };
+            }
+
+            return Load(plain with { Vehicles = ReadOnlyArray.CopyOf(vehicles) });
+        }
+
+        /// <summary>
+        /// A 5×5 lot with four bays where the third blue and the third red each wait behind a yellow
+        /// car. Pieces in anchor order: 0 B&lt; 1 R&gt; 2 B&lt; 3 R&gt; 4 Y&lt; 5 B&lt; (behind 4) 6 R&gt; (behind 7)
+        /// 7 Y&gt; 8 Y&lt;. Parking 0, 2, 1, 3 fills the bays B B R R, and one more bay cannot rescue it:
+        /// only yellows can leave, and a yellow fills the fifth bay.
+        /// </summary>
+        public static LotDefinition ThirdsBehindYellows() => new(
+            Width: 5,
+            Height: 5,
+            Bays: 4,
+            Pillars: ReadOnlyArray.Empty<int>(),
+            Vehicles: ReadOnlyArray.Of(
+                Car(Blue, 0, Facing.West),
+                Car(Red, 3, Facing.East),
+                Car(Blue, 5, Facing.West),
+                Car(Red, 8, Facing.East),
+                Car(Yellow, 10, Facing.West),
+                Car(Blue, 12, Facing.West),
+                Car(Red, 16, Facing.East),
+                Car(Yellow, 18, Facing.East),
+                Car(Yellow, 20, Facing.West)),
+            Clues: ReadOnlyArray.Empty<LotClue>());
+
         public static VehicleSpec Car(ColourId colour, int anchor, Facing facing, bool covered = false) =>
             new(colour, anchor, VehicleLength.Two, facing, covered);
 

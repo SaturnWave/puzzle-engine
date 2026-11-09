@@ -162,7 +162,7 @@ namespace PuzzleCore.Play
             }
 
             // The start caps (13 vials, 7 bays) guarantee the spare fits; None would mean a level outside them.
-            if (!_rules.TryWithOneSpare(Current).TryGet(out TState spared))
+            if (!PeekSpare().TryGet(out TState spared))
             {
                 return Refuse(InvalidReason.SecondSpare);
             }
@@ -228,6 +228,13 @@ namespace PuzzleCore.Play
 
             return Option.Some(restored);
         }
+
+        /// <summary>
+        /// The state <see cref="TakeSpare"/> would give, without changing the attempt; None when the
+        /// attempt's one spare is used or no spare fits (the packing limit). Like <see cref="PeekRewind"/>
+        /// it ignores the mode and the outcome. The near miss solves from this state.
+        /// </summary>
+        public Option<TState> PeekSpare() => SpareUsed ? Option.None<TState>() : _rules.TryWithOneSpare(Current);
 
         /// <summary>Shows one hidden cell (Campaign only, at most once per attempt). It changes nothing in the rules state.</summary>
         public StepResult<TRejection> UseInsight(HiddenCell cell)

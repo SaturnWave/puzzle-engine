@@ -6,7 +6,6 @@ using PuzzleCore.Jam;
 using PuzzleCore.Play;
 using PuzzleCore.Records;
 using PuzzleCore.Rules;
-using PuzzleCore.Search;
 
 namespace CoveredLot.Playtest.Game
 {
@@ -61,6 +60,9 @@ namespace CoveredLot.Playtest.Game
         public SeenSet Seen => _attempt.Seen;
 
         public FailOffers Offers { get; private set; } = new FailOffers(false, false);
+
+        /// <summary>The longest rewind the fail screen's picker offers (the engine's per-game limit).</summary>
+        public int RewindLimit => _attempt.RewindLimit.Value;
 
         /// <summary>★★★ at peak par, ★★ one above, ★ for any other win.</summary>
         public int Stars => Peak <= Level.PeakPar.Value ? 3 : Peak == Level.PeakPar.Value + 1 ? 2 : 1;
@@ -165,23 +167,16 @@ namespace CoveredLot.Playtest.Game
         }
 
         /// <summary>
-        /// +1 bay only when the solver wins from the full row with one more bay (near-miss), and at most
-        /// once; rewind only when some rewind of 1-5 moves reaches a winnable position. Budget overruns offer nothing.
+        /// The engine's fail analysis decides both offers: +1 bay on a near miss (the spare unused and
+        /// one more bay wins), rewind when some allowed rewind reaches a winnable position. A budget
+        /// overrun is Unknown and offers nothing.
         /// </summary>
         private FailOffers ComputeOffers()
         {
-            bool spareCanWin = !_attempt.SpareUsed
-                && Rules.TryWithOneSpare(State).TryGet(out LotState spared)
-                && LotSolver.SolveFrom(Level.Level, spared, OfferBudget) is SolveResult<Exit>.Solved;
-
-            bool rewindCanWin = false;
-            for (int moves = 1; moves <= Attempt<LotState, Exit, ExitRejection>.MaxRewind && !rewindCanWin; moves++)
-            {
-                rewindCanWin = _attempt.PeekRewind(new MoveCount(moves)).TryGet(out LotState back)
-                    && LotSolver.SolveFrom(Level.Level, back, OfferBudget) is SolveResult<Exit>.Solved;
-            }
-
-            return new FailOffers(spareCanWin, rewindCanWin);
+            var solver = new LotPositionSolver(Level.Level);
+            NearMiss nearMiss = FailAnalysis.NearMissOf(_attempt, solver, OfferBudget);
+            RewindReach reach = FailAnalysis.RewindReachOf(_attempt, solver, OfferBudget);
+            return new FailOffers(nearMiss is NearMiss.Yes, reach == RewindReach.Winnable);
         }
 
         private Attempt<LotState, Exit, ExitRejection> NewAttempt() =>
