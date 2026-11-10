@@ -132,7 +132,7 @@ namespace PuzzleCore.Tests.Jam
             // Piece 1 lifts its cover on move 2, so the limit is 2. Rewind 1 leaves B R Y in four bays, where
             // every next car fills the row; rewind 2 leaves B R, which wins.
             LotLevel level = FreeCarsWithCoversOn(1);
-            Attempt<LotState, Exit, ExitRejection> attempt = PlayFenced(level, 0, 1, 2, 4);
+            Attempt<LotState, Exit, ExitRejection> attempt = Play(level, 0, 1, 2, 4);
             var solver = new RecordingSolver(level);
 
             Assert.Equal(new MoveCount(2), attempt.RewindLimit);
@@ -150,7 +150,7 @@ namespace PuzzleCore.Tests.Jam
         {
             // Piece 2 lifts its cover on move 3, so the limit is 1, and rewind 1 leaves B R Y in four bays.
             LotLevel level = FreeCarsWithCoversOn(2);
-            Attempt<LotState, Exit, ExitRejection> attempt = PlayFenced(level, 0, 1, 2, 4);
+            Attempt<LotState, Exit, ExitRejection> attempt = Play(level, 0, 1, 2, 4);
             var solver = new RecordingSolver(level);
 
             Assert.Equal(new MoveCount(1), attempt.RewindLimit);
@@ -163,7 +163,7 @@ namespace PuzzleCore.Tests.Jam
         {
             // Under the reveal fence a cover lifted by the failing move leaves no rewind at all.
             LotLevel level = FreeCarsWithCoversOn(4);
-            Attempt<LotState, Exit, ExitRejection> attempt = PlayFenced(level, 0, 1, 2, 4);
+            Attempt<LotState, Exit, ExitRejection> attempt = Play(level, 0, 1, 2, 4);
             var solver = new RecordingSolver(level);
             Assert.Equal(new MoveCount(0), attempt.RewindLimit);
 
@@ -252,7 +252,7 @@ namespace PuzzleCore.Tests.Jam
             var seen = new CasesSeen();
             for (int run = 0; run < 60; run++)
             {
-                CheckLine(level, new FencedJamRules(level), Pcg32.Seeded((ulong)run, 23UL), seen);
+                CheckLine(level, new JamRules(level), Pcg32.Seeded((ulong)run, 23UL), seen);
             }
 
             Assert.True(seen.FencedAboveZero > 0, "The fence never shortened a rewind to a length above zero.");
@@ -382,13 +382,6 @@ namespace PuzzleCore.Tests.Jam
         {
             var rules = new JamRules(level);
             var attempt = new Attempt<LotState, Exit, ExitRejection>(rules, rules.Start, PlayMode.Campaign);
-            PlayOn(attempt, pieces);
-            return attempt;
-        }
-
-        private static Attempt<LotState, Exit, ExitRejection> PlayFenced(LotLevel level, params int[] pieces)
-        {
-            var attempt = new Attempt<LotState, Exit, ExitRejection>(new FencedJamRules(level), LotState.Start(level), PlayMode.Campaign);
             PlayOn(attempt, pieces);
             return attempt;
         }

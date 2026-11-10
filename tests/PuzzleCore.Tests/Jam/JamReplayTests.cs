@@ -47,6 +47,27 @@ namespace PuzzleCore.Tests.Jam
         }
 
         [Fact]
+        public void A_rescue_rewinding_one_move_past_the_last_reveal_is_refused()
+        {
+            // Piece 3 lifts its cover on move 2 and the bays fill on move 4, so the rescue's rewind of
+            // two moves is the longest the fence allows.
+            var actions = new List<RecordAction<Exit>>(ReadGolden("six-by-six-rescue.pc-record.json").Actions);
+            Assert.Equal(new MoveCount(2), Assert.IsType<RecordAction<Exit>.Rewind>(actions[4]).Moves);
+            actions[4] = RewindOf(3);
+
+            Assert.Equal(new ReplayVerdict.Invalid(new ActionIndex(4), InvalidReason.RewindOutOfRange), RunCampaign(actions).Verdict);
+        }
+
+        [Fact]
+        public void The_rescue_record_from_before_the_fence_is_refused_at_its_rewind()
+        {
+            // Its failing move lifts piece 3's cover, so the fence leaves no rewind at all.
+            ReplayReport report = ReplayGolden("six-by-six-rewind-across-reveal.pc-record.json");
+
+            Assert.Equal(new ReplayVerdict.Invalid(new ActionIndex(4), InvalidReason.RewindOutOfRange), report.Verdict);
+        }
+
+        [Fact]
         public void A_record_written_and_read_back_is_unchanged_and_canonical()
         {
             ActionRecord<Exit> record = ReadGolden("six-by-six-win.pc-record.json");
@@ -180,7 +201,8 @@ namespace PuzzleCore.Tests.Jam
         [Fact]
         public void Rewind_restores_the_exact_earlier_state_and_the_seen_set_only_grows()
         {
-            // Property over seeded random legal lines on the 6×6 board.
+            // Property over seeded random legal lines on the 6×6 board, each rewound by an allowed length.
+            int rewinds = 0;
             for (int run = 0; run < 200; run++)
             {
                 Pcg32 random = Pcg32.Seeded((ulong)run, 7UL);
@@ -200,13 +222,22 @@ namespace PuzzleCore.Tests.Jam
                     continue;
                 }
 
+                int limit = attempt.RewindLimit.Value;
+                if (limit == 0)
+                {
+                    continue;
+                }
+
                 ulong seenBefore = attempt.Seen.Mask;
-                int back = 1 + random.NextIndex(Math.Min(Attempt<LotState, Exit, ExitRejection>.MaxRewind, attempt.Moves.Value));
-                attempt.Rewind(new MoveCount(back));
+                int back = 1 + random.NextIndex(limit);
+                Assert.IsType<StepResult<ExitRejection>.Done>(attempt.Rewind(new MoveCount(back)));
+                rewinds++;
 
                 Assert.Equal(keys[keys.Count - 1 - back], attempt.Current.Exact);
                 Assert.Equal(seenBefore, attempt.Seen.Mask & seenBefore);
             }
+
+            Assert.True(rewinds > 0, "The property never rewound.");
         }
 
         private static JamRules Rules() => new(Load(SixBySix()));

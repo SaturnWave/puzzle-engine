@@ -11,15 +11,15 @@
   },
   "actions": [
     { "t": "Move", "piece": 0, "sincePreviousMs": 1000 },
+    { "t": "Move", "piece": 3, "sincePreviousMs": 1000 },
     { "t": "Move", "piece": 1, "sincePreviousMs": 1000 },
     { "t": "Move", "piece": 8, "sincePreviousMs": 1000 },
-    { "t": "Move", "piece": 3, "sincePreviousMs": 1000 },
     { "t": "Rewind", "n": 2, "sincePreviousMs": 4000 },
-    { "t": "Move", "piece": 3, "sincePreviousMs": 1000 },
+    { "t": "Move", "piece": 1, "sincePreviousMs": 1000 },
     { "t": "Move", "piece": 4, "sincePreviousMs": 1000 },
     { "t": "Move", "piece": 2, "sincePreviousMs": 1000 },
-    { "t": "Move", "piece": 8, "sincePreviousMs": 1000 },
     { "t": "Move", "piece": 5, "sincePreviousMs": 1000 },
+    { "t": "Move", "piece": 8, "sincePreviousMs": 1000 },
     { "t": "Move", "piece": 6, "sincePreviousMs": 1000 },
     { "t": "Move", "piece": 7, "sincePreviousMs": 1000 }
   ]

@@ -12,24 +12,25 @@ namespace PuzzleCore.Tests.Jam
 {
     /// <summary>
     /// The rewind limit each game supplies through its RewindFence (Sealed Vials review, 2026-11-08),
-    /// checked through the shared Attempt and the replay validator. Covered Lot has no fence yet, so
-    /// the fenced cases run the Jam rules with the AtReveal fence switched on.
+    /// checked through the shared Attempt and the replay validator. Covered Lot's rules fence rewinds
+    /// at the last reveal; the unfenced cases switch the fence off, because the shared contract keeps
+    /// RewindFence.None.
     /// </summary>
     public sealed class RewindLimitTests
     {
         private static readonly StepResult<ExitRejection> OutOfRange = new StepResult<ExitRejection>.Refused(InvalidReason.RewindOutOfRange);
 
         [Fact]
-        public void Covered_lot_has_no_rewind_fence()
+        public void Covered_lot_fences_rewinds_at_the_last_reveal()
         {
-            Assert.Equal(RewindFence.None, new JamRules(Load(SixBySix())).RewindFence);
+            Assert.Equal(RewindFence.AtReveal, new JamRules(Load(SixBySix())).RewindFence);
         }
 
         [Fact]
         public void Without_a_fence_the_limit_is_five_moves_capped_by_the_line()
         {
             LotLevel level = Load(FreeCars(4, Blue, Red, Yellow, Blue, Red, Yellow, Blue, Red, Yellow));
-            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new JamRules(level), level);
+            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new UnfencedJamRules(level), level);
             Assert.Equal(new MoveCount(0), attempt.RewindLimit);
 
             // Each colour's three cars in a row clear together, so this line never fills the bays.
@@ -45,7 +46,7 @@ namespace PuzzleCore.Tests.Jam
         public void Without_a_fence_a_rewind_may_go_back_past_a_lifted_cover_which_stays_lifted()
         {
             LotLevel level = FreeCarsWithCoversOn(1);
-            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new JamRules(level), level);
+            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new UnfencedJamRules(level), level);
             Play(attempt, 0, 1, 2, 4); // the bays fill: B R Y R
 
             Assert.Equal(new MoveCount(4), attempt.RewindLimit);
@@ -58,7 +59,7 @@ namespace PuzzleCore.Tests.Jam
         public void Under_the_reveal_fence_only_the_moves_since_the_last_reveal_can_be_rewound()
         {
             LotLevel level = FreeCarsWithCoversOn(1);
-            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new FencedJamRules(level), level);
+            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new JamRules(level), level);
             Play(attempt, 0, 1); // piece 1 lifts its cover
             LotState afterReveal = attempt.Current;
             Play(attempt, 2, 4); // the bays fill: B R Y R
@@ -76,7 +77,7 @@ namespace PuzzleCore.Tests.Jam
         public void Under_the_reveal_fence_a_reveal_on_the_failing_move_leaves_no_rewind()
         {
             LotLevel level = FreeCarsWithCoversOn(4);
-            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new FencedJamRules(level), level);
+            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new JamRules(level), level);
             Play(attempt, 0, 1, 2, 4); // the last car lifts its cover and fills the bays
 
             Assert.IsType<Outcome.Failed>(attempt.Outcome);
@@ -89,7 +90,7 @@ namespace PuzzleCore.Tests.Jam
         public void Under_the_reveal_fence_the_spare_does_not_move_the_fence_and_survives_a_rewind_behind_it()
         {
             LotLevel level = FreeCarsWithCoversOn(1);
-            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new FencedJamRules(level), level);
+            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new JamRules(level), level);
             Play(attempt, 0, 1, 2, 4);
             Assert.IsType<StepResult<ExitRejection>.Done>(attempt.TakeSpare());
             Play(attempt, 5); // five cars in five bays: full again
@@ -106,7 +107,7 @@ namespace PuzzleCore.Tests.Jam
         public void Under_the_reveal_fence_the_validator_refuses_a_recorded_rewind_across_a_reveal()
         {
             LotLevel level = FreeCarsWithCoversOn(1);
-            var rules = new FencedJamRules(level);
+            var rules = new JamRules(level);
             var fail = new List<RecordAction<Exit>> { MoveOf(0), MoveOf(1), MoveOf(2), MoveOf(4) };
 
             ReplayReport across = Replay.Run(rules, LotState.Start(level), PlayMode.Campaign, ReadOnlyArray.CopyOf(new List<RecordAction<Exit>>(fail) { RewindOf(3) }));
@@ -120,7 +121,7 @@ namespace PuzzleCore.Tests.Jam
         public void Under_the_reveal_fence_the_limit_counts_from_the_latest_reveal()
         {
             LotLevel level = FreeCarsWithCoversOn(0, 2);
-            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new FencedJamRules(level), level);
+            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new JamRules(level), level);
             Play(attempt, 0, 1, 2, 4); // pieces 0 and 2 lift their covers; the bays fill: B R Y R
 
             Assert.Equal(new MoveCount(1), attempt.RewindLimit);
@@ -134,7 +135,7 @@ namespace PuzzleCore.Tests.Jam
         public void Under_the_reveal_fence_insight_does_not_move_the_fence()
         {
             LotLevel level = FreeCarsWithCoversOn(8);
-            var rules = new FencedJamRules(level);
+            var rules = new JamRules(level);
             Attempt<LotState, Exit, ExitRejection> attempt = Begin(rules, level);
             Play(attempt, 0, 1);
             Assert.IsType<StepResult<ExitRejection>.Done>(attempt.UseInsight(new HiddenCell(8)));
@@ -150,7 +151,7 @@ namespace PuzzleCore.Tests.Jam
         public void Under_the_reveal_fence_a_move_that_lifts_a_cover_already_shown_by_insight_still_moves_the_fence()
         {
             LotLevel level = FreeCarsWithCoversOn(1);
-            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new FencedJamRules(level), level);
+            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new JamRules(level), level);
             Assert.IsType<StepResult<ExitRejection>.Done>(attempt.UseInsight(new HiddenCell(1)));
             Play(attempt, 0, 1, 2, 4);
 
@@ -173,7 +174,7 @@ namespace PuzzleCore.Tests.Jam
 
             // Under the fence, piece 0 lifts its cover on the first move, so six moves follow the reveal and the cap decides.
             LotLevel covered = FreeCarsWithCoversOn(0);
-            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new FencedJamRules(covered), covered);
+            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new JamRules(covered), covered);
             Play(attempt, 0, 3, 6, 1, 2, 4, 5);
             Assert.IsType<Outcome.Failed>(attempt.Outcome);
             Assert.Equal(new MoveCount(5), attempt.RewindLimit);
@@ -187,7 +188,7 @@ namespace PuzzleCore.Tests.Jam
             // Property over seeded random lines on the 6×6 board (covers on pieces 3 and 7), with up to
             // four fails per attempt, each followed by a random allowed rewind.
             LotLevel level = Load(SixBySix());
-            var rules = new FencedJamRules(level);
+            var rules = new JamRules(level);
             int rewinds = 0;
             int fenceBites = 0;
             int rewindsAfterALift = 0;

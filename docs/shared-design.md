@@ -109,7 +109,8 @@ public interface IPuzzleRules<TState, TMove, TRejection>    // TRejection: the g
 }
 // Moves: Sort `Pour(VialId From, VialId To)` (not in code yet); Jam `Exit(PieceId Piece)`.
 public enum RewindFence { None, AtReveal }   // AtReveal: never back past the last move that revealed a hidden cell.
-                                             // Both games use AtReveal (Q3, Q19); Jam moves from None to it in P1.
+                                             // Both games use AtReveal (Q3, Q19): Jam since Covered Lot's P1, and Sort
+                                             // when its rules are built. None stays in the contract; no game uses it.
 // P6 (not in code yet): the "which cells are hidden now" query becomes a new optional interface next to
 // IPuzzleRules, so existing implementers keep compiling (TC6). Jam implements it; Insight's refusal reads it.
 
@@ -559,7 +560,7 @@ Covered Lot and Sealed Vials are built in parallel, each by its own Claude Code 
 
 | Shared piece | Delivered by | In | Until then, the other session may assume |
 |---|---|---|---|
-| The rewind fence for Covered Lot (`JamRules.RewindFence` = `AtReveal`) | Covered Lot session | P1 | `Attempt` already applies `AtReveal` for a game that names it. Sort names it, and adds `LayerRevealed` to the reveals `Attempt` sees, with its events |
+| The rewind fence for Covered Lot (`JamRules.RewindFence` = `AtReveal`) | Covered Lot session | P1 (delivered) | `Attempt` already applies `AtReveal` for a game that names it. Sort names it, and adds `LayerRevealed` to the reveals `Attempt` sees, with its events |
 | `FailCause`, next to `FailAnalysis`, and `losing_move_back` in `fail_detail` | Covered Lot session | P2 | No cause exists in code; §2's definition is the target. Each game supplies its own position solver and hidden check (TC1) |
 | The deduction ladder in code: `LotClues` switched; `ForUnknownCount` and the third definition removed | Covered Lot session | P3 | The ladder text in §2 is the target; the code still grades with the old mapping. Until then, a Sort grader follows the §2 text, not the code's old mapping. The Covered Lot session tells the Sealed Vials session before merging the removal |
 | Grades: `PlanGrade`, `LevelGrade`, `LevelKind`, the presentation file, level ids `{packId}-{slot:0000}` | Covered Lot session | P4 | Only `DeductionGrade` and `DeductionRung` exist |

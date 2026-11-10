@@ -5,16 +5,17 @@ using PuzzleCore.Rules;
 namespace PuzzleCore.Tests.Jam
 {
     /// <summary>
-    /// The Jam rules with the AtReveal rewind fence switched on: Covered Lot as it would play if it
-    /// adopted Sealed Vials' fence (open question 8). Lets the shared fence code run on a real game.
+    /// The Jam rules with the rewind fence switched off (<see cref="RewindFence.None"/>). Both games
+    /// fence their rewinds at the last reveal, but the shared contract keeps the unfenced value, so
+    /// this keeps Attempt's unfenced path tested on a real game.
     /// </summary>
-    internal sealed class FencedJamRules : IPuzzleRules<LotState, Exit, ExitRejection>
+    internal sealed class UnfencedJamRules : IPuzzleRules<LotState, Exit, ExitRejection>
     {
         private readonly JamRules _jam;
 
-        public FencedJamRules(LotLevel level) => _jam = new JamRules(level);
+        public UnfencedJamRules(LotLevel level) => _jam = new JamRules(level);
 
-        public RewindFence RewindFence => RewindFence.AtReveal;
+        public RewindFence RewindFence => RewindFence.None;
 
         public void AppendLegalMoves(in LotState state, List<Exit> into) => _jam.AppendLegalMoves(state, into);
 
