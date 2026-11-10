@@ -327,7 +327,7 @@ public enum InvalidReason { IllegalMove, SpareOutsideFail, SecondSpare, RewindOu
 
 | Test | Checks |
 |---|---|
-| Golden replays | Each committed `pc-record` reproduces the same `PuzzleEvent` sequence, outcome and final `ExactKey`. They also run in Unity's `EngineSmokeTest` |
+| Golden replays | Each committed `pc-record` pins its expected verdict. A valid record reproduces the same `PuzzleEvent` sequence, outcome and final `ExactKey`; a record kept to be refused gives the same `Invalid` action index and reason (Jam's `six-by-six-rewind-across-reveal`: action 4, `RewindOutOfRange`). They also run in Unity's `EngineSmokeTest` |
 | Golden generator packs | The golden pack pin: the SHA-256 of the canonical pack for `golden-gen` slots 0-99, plain and covered, per `generatorVersion`, including the try schedule; the presentation file is pinned separately, and today's plain golden hash stays. The covered-levels pin. Re-pinned only with the user's approval (Q30) |
 | Apply/rewind property | For random legal move sequences, `Rewind(n)` returns the exact earlier `ExactKey`, no accepted rewind crosses the last reveal, and the `SeenSet` only grows within the attempt. `TryApply` never mutates its input |
 | Key split | Sort: permuting identical vials changes `ExactKey` but not `CanonicalKey`. Jam: the same exited set with a different slot order shares the `CanonicalKey` and differs in `ExactKey` |

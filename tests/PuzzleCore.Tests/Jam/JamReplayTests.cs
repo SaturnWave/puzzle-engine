@@ -255,7 +255,11 @@ namespace PuzzleCore.Tests.Jam
                 int back = 1 + random.NextIndex(limit);
                 Assert.IsType<StepResult<ExitRejection>.Done>(attempt.Rewind(new MoveCount(back)));
                 cases.Rewinds++;
-                cases.CoversBroughtBack += CoveredCarsBackInTheLot(level, failed, attempt.Current);
+                foreach (PieceId piece in CoveredCarsBackInTheLot(level, failed, attempt.Current))
+                {
+                    Assert.True(attempt.Seen.Contains(new HiddenCell(piece.Value)), "A rewind brought back a lifted cover, and its colour is no longer seen.");
+                    cases.CoversBroughtBack++;
+                }
 
                 Assert.Equal(keys[keys.Count - 1 - back], attempt.Current.Exact);
                 Assert.Equal(seenBefore, attempt.Seen.Mask & seenBefore);
@@ -265,13 +269,15 @@ namespace PuzzleCore.Tests.Jam
         }
 
         /// <summary>Covered cars that had left the lot in <paramref name="before"/> but are in it again in <paramref name="after"/>.</summary>
-        private static int CoveredCarsBackInTheLot(LotLevel level, LotState before, LotState after)
+        private static List<PieceId> CoveredCarsBackInTheLot(LotLevel level, LotState before, LotState after)
         {
-            int back = 0;
+            var back = new List<PieceId>();
             foreach (Vehicle vehicle in level.Vehicles)
             {
-                bool isBack = vehicle.StartsCovered && before.HasExited(vehicle.Id) && !after.HasExited(vehicle.Id);
-                back += isBack ? 1 : 0;
+                if (vehicle.StartsCovered && before.HasExited(vehicle.Id) && !after.HasExited(vehicle.Id))
+                {
+                    back.Add(vehicle.Id);
+                }
             }
 
             return back;
