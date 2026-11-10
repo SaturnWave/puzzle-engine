@@ -69,9 +69,7 @@ namespace CoveredLot.Playtest.Game
 
         public void Tap(PieceId piece)
         {
-            JustLeft = Option.None<PieceId>();
-            Bumped = Option.None<PieceId>();
-            BumpedBy = Option.None<Blocker>();
+            ForgetLastTap();
             int occupiedBefore = State.OccupiedSlots;
             switch (_attempt.Move(new Exit(piece)))
             {
@@ -108,6 +106,8 @@ namespace CoveredLot.Playtest.Game
         {
             if (_attempt.Rewind(new MoveCount(moves)) is StepResult<ExitRejection>.Done)
             {
+                // The last tapped car is back in the lot now; drawn as leaving, it would stay invisible.
+                ForgetLastTap();
                 Message = "Rewound " + moves.ToString(CultureInfo.InvariantCulture) + (moves == 1 ? " move." : " moves.");
                 Offers = new FailOffers(false, false);
             }
@@ -118,9 +118,7 @@ namespace CoveredLot.Playtest.Game
             _attempt = NewAttempt();
             Peak = 0;
             Retries++;
-            JustLeft = Option.None<PieceId>();
-            Bumped = Option.None<PieceId>();
-            BumpedBy = Option.None<Blocker>();
+            ForgetLastTap();
             Offers = new FailOffers(false, false);
             Message = "Fresh start.";
         }
@@ -181,6 +179,14 @@ namespace CoveredLot.Playtest.Game
 
         private Attempt<LotState, Exit, ExitRejection> NewAttempt() =>
             new Attempt<LotState, Exit, ExitRejection>(Rules, Rules.Start, PlayMode.Campaign);
+
+        /// <summary>Clears what the last tap showed: the car leaving, and the bumped car with its blocker.</summary>
+        private void ForgetLastTap()
+        {
+            JustLeft = Option.None<PieceId>();
+            Bumped = Option.None<PieceId>();
+            BumpedBy = Option.None<Blocker>();
+        }
 
         private static string Describe(ReadOnlyArray<PuzzleEvent> events)
         {
