@@ -96,6 +96,7 @@ body {
 @keyframes settle { from { transform: translateY(-8px); opacity: .4; } }
 
 .hint { font-size: .85rem; color: var(--muted); line-height: 1.4; }
+.debug { font-family: ui-monospace, Consolas, monospace; font-size: .78rem; color: var(--muted); }
 .ledger { margin-top: 16px; }
 .ledger-entry { display: inline-block; margin: 0 6px 6px 0; padding: 4px 10px; border: 3px solid; border-radius: 999px; font-weight: 700; background: var(--surface); }
 

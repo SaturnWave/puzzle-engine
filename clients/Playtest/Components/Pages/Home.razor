@@ -3,6 +3,7 @@
 @using System.Globalization
 @using PuzzleCore
 @using PuzzleCore.Jam
+@using PuzzleCore.Play
 @using PuzzleCore.Rules
 @using CoveredLot.Playtest.Game
 @inject PlaytestLevels Catalogue
@@ -150,6 +151,10 @@
                         <p class="offer-copy">A rewind of up to 5 moves can still win.</p>
                     }
                     <p class="hint">Test version: +1 bay and rewind are free here. In the game they cost gold.</p>
+                    @if (_session.Cause.TryGet(out FailCause? cause))
+                    {
+                        <p class="debug">Debug · fail cause: @DescribeCause(cause)</p>
+                    }
                 </div>
             </div>
         </div>
@@ -297,4 +302,13 @@
     private static string Stars(int stars) => new string('★', stars) + new string('☆', 3 - stars);
 
     private static string N(int value) => value.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>The debug line's text: the cause and how far back the losing move was (1 is the last move).</summary>
+    private static string DescribeCause(FailCause cause) => cause switch
+    {
+        FailCause.Capacity capacity => "capacity, losing move " + N(capacity.LosingMoveBack.Value) + " back",
+        FailCause.Deduction deduction => "deduction, losing move " + N(deduction.LosingMoveBack.Value) + " back",
+        FailCause.Unknown => "unknown (a solve ran out of its budget)",
+        _ => throw new InvalidOperationException("Unknown fail cause."),
+    };
 }

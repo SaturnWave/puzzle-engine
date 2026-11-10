@@ -61,6 +61,12 @@ namespace CoveredLot.Playtest.Game
 
         public FailOffers Offers { get; private set; } = new FailOffers(false, false);
 
+        /// <summary>
+        /// Why the current fail was lost, for the fail screen's debug line only: the game logs it and never
+        /// shows or sells it (shared-design.md §2). None while the attempt has not failed.
+        /// </summary>
+        public Option<FailCause> Cause { get; private set; }
+
         /// <summary>The longest rewind the fail screen's picker offers (the engine's per-game limit).</summary>
         public int RewindLimit => _attempt.RewindLimit.Value;
 
@@ -98,7 +104,7 @@ namespace CoveredLot.Playtest.Game
             if (_attempt.TakeSpare() is StepResult<ExitRejection>.Done)
             {
                 Message = "One more bay. It stays for the rest of this attempt.";
-                Offers = new FailOffers(false, false);
+                ForgetTheFail();
             }
         }
 
@@ -109,7 +115,7 @@ namespace CoveredLot.Playtest.Game
                 // The last tapped car is back in the lot now; drawn as leaving, it would stay invisible.
                 ForgetLastTap();
                 Message = "Rewound " + moves.ToString(CultureInfo.InvariantCulture) + (moves == 1 ? " move." : " moves.");
-                Offers = new FailOffers(false, false);
+                ForgetTheFail();
             }
         }
 
@@ -119,7 +125,7 @@ namespace CoveredLot.Playtest.Game
             Peak = 0;
             Retries++;
             ForgetLastTap();
-            Offers = new FailOffers(false, false);
+            ForgetTheFail();
             Message = "Fresh start.";
         }
 
@@ -161,7 +167,15 @@ namespace CoveredLot.Playtest.Game
             {
                 Message = "All bays are full.";
                 Offers = ComputeOffers();
+                Cause = Option.Some(FailAnalysis.CauseOf(_attempt, new LotPositionSolver(Level.Level), new LotHiddenMoveCheck(Level.Level), OfferBudget));
             }
+        }
+
+        /// <summary>Clears the fail screen's offers and cause once the attempt is back in play or starts again.</summary>
+        private void ForgetTheFail()
+        {
+            Offers = new FailOffers(false, false);
+            Cause = Option.None<FailCause>();
         }
 
         /// <summary>
