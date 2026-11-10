@@ -13,17 +13,6 @@ namespace PuzzleCore.Tests.Jam
     /// </summary>
     public sealed class SeenSetTests
     {
-        [Fact]
-        public void A_lifted_cover_marks_its_own_piece_seen()
-        {
-            // Piece 2 is yellow, colour id 3, so a seen set that took the colour for the piece would show here.
-            LotLevel level = FreeCarsWithCoversOn(2);
-            Attempt<LotState, Exit, ExitRejection> attempt = Begin(level, PlayMode.Campaign);
-            Play(attempt, 0, 1, 2);
-
-            Assert.Equal(SeenOnly(2), attempt.Seen);
-        }
-
         [Theory]
         [InlineData(PlayMode.Campaign)]
         [InlineData(PlayMode.DailyProof)]
@@ -31,13 +20,51 @@ namespace PuzzleCore.Tests.Jam
         [InlineData(PlayMode.WeeklyTwist)]
         [InlineData(PlayMode.Competitive)]
         [InlineData(PlayMode.Siege)]
-        public void A_lifted_cover_is_seen_in_every_mode(PlayMode mode)
+        public void A_lifted_cover_marks_its_own_piece_seen_in_every_mode(PlayMode mode)
         {
-            LotLevel level = FreeCarsWithCoversOn(1);
+            // Piece 2 is yellow, colour id 3, so the piece and its colour stay apart in every mode.
+            LotLevel level = FreeCarsWithCoversOn(2);
             Attempt<LotState, Exit, ExitRejection> attempt = Begin(level, mode);
-            Play(attempt, 0, 1);
+            Play(attempt, 0, 1, 2);
 
-            Assert.Equal(SeenOnly(1), attempt.Seen);
+            Assert.Equal(SeenOnly(2), attempt.Seen);
+        }
+
+        [Fact]
+        public void A_refused_second_insight_reveals_nothing()
+        {
+            LotLevel level = FreeCarsWithCoversOn(7, 8);
+            Attempt<LotState, Exit, ExitRejection> attempt = Begin(level, PlayMode.Campaign);
+            Assert.IsType<StepResult<ExitRejection>.Done>(attempt.UseInsight(new HiddenCell(7)));
+
+            Assert.Equal(new StepResult<ExitRejection>.Refused(InvalidReason.InsightLimit), attempt.UseInsight(new HiddenCell(8)));
+            Assert.Equal(SeenOnly(7), attempt.Seen);
+        }
+
+        [Theory]
+        [InlineData(PlayMode.DailyProof)]
+        [InlineData(PlayMode.Casebook)]
+        [InlineData(PlayMode.WeeklyTwist)]
+        [InlineData(PlayMode.Competitive)]
+        [InlineData(PlayMode.Siege)]
+        public void An_insight_outside_campaign_is_refused_and_reveals_nothing(PlayMode mode)
+        {
+            LotLevel level = FreeCarsWithCoversOn(8);
+            Attempt<LotState, Exit, ExitRejection> attempt = Begin(level, mode);
+
+            Assert.Equal(new StepResult<ExitRejection>.Refused(InvalidReason.BoosterInCompetitiveMode), attempt.UseInsight(new HiddenCell(8)));
+            Assert.Equal(default(SeenSet), attempt.Seen);
+        }
+
+        [Fact]
+        public void A_concede_keeps_every_seen_cell()
+        {
+            LotLevel level = FreeCarsWithCoversOn(0);
+            Attempt<LotState, Exit, ExitRejection> attempt = Begin(level, PlayMode.Campaign);
+            Play(attempt, 0); // piece 0 lifts its cover
+            Assert.IsType<StepResult<ExitRejection>.Done>(attempt.Concede());
+
+            Assert.Equal(SeenOnly(0), attempt.Seen);
         }
 
         [Fact]

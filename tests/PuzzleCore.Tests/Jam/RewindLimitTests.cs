@@ -151,6 +151,19 @@ namespace PuzzleCore.Tests.Jam
         }
 
         [Fact]
+        public void A_rewind_reports_how_many_moves_it_went_back()
+        {
+            // Four moves on the line and one rewound, so the count differs from the three moves left.
+            LotLevel level = Load(FreeCars(4, Blue, Red, Yellow, Blue, Red, Yellow, Blue, Red, Yellow));
+            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new JamRules(level), level);
+            Play(attempt, 0, 1, 2, 4); // the bays fill: B R Y R
+
+            Assert.Equal(
+                new StepResult<ExitRejection>.Done(ReadOnlyArray.Of<PuzzleEvent>(new PuzzleEvent.Rewound(new MoveCount(1)))),
+                attempt.Rewind(new MoveCount(1)));
+        }
+
+        [Fact]
         public void Under_the_reveal_fence_the_validator_refuses_a_recorded_rewind_across_a_reveal()
         {
             LotLevel level = FreeCarsWithCoversOn(1);

@@ -198,6 +198,24 @@ namespace PuzzleCore.Tests.Jam
         }
 
         [Fact]
+        public void A_replayed_spare_reports_the_new_bay_count()
+        {
+            var rules = new JamRules(Load(FreeCars(4, Blue, Red, Yellow, Blue, Red, Yellow, Blue, Red, Yellow)));
+
+            ReplayReport report = Replay.Run(rules, rules.Start, PlayMode.Campaign, ReadOnlyArray.Of(MoveOf(0), MoveOf(1), MoveOf(2), MoveOf(4), Spare()));
+
+            Assert.Equal(new ReplayVerdict.Valid(new Outcome.InPlay(), new MoveCount(4), SpareUsed: true), report.Verdict);
+            Assert.Equal(
+                new PuzzleEvent[]
+                {
+                    Exited(0, 0), Exited(1, 1), Exited(2, 2),
+                    Exited(4, 3), new PuzzleEvent.Failed(FailKind.SlotsFull),
+                    new PuzzleEvent.SpareAdded(new CapacityCount(5)),
+                },
+                report.Events);
+        }
+
+        [Fact]
         public void A_spare_taken_before_a_rewind_stays_taken()
         {
             var rules = new JamRules(Load(FreeCars(4, Blue, Red, Yellow, Blue, Red, Yellow, Blue, Red, Yellow)));
