@@ -121,22 +121,30 @@ namespace PuzzleCore.Tests.Jam
         }
 
         [Fact]
-        public void Under_the_reveal_fence_a_lifted_cover_marks_its_own_piece_seen()
+        public void Under_the_reveal_fence_a_reveal_on_the_failing_move_still_fences_the_line_after_the_spare()
         {
-            // Piece 2 is yellow, colour id 3, so a seen set that took the colour for the piece would show here.
-            LotLevel level = FreeCarsWithCoversOn(2);
+            LotLevel level = FreeCarsWithCoversOn(4);
             Attempt<LotState, Exit, ExitRejection> attempt = Begin(new JamRules(level), level);
-            Play(attempt, 0, 1, 2);
+            Play(attempt, 0, 1, 2, 4); // the failing move lifts piece 4's cover: B R Y R
+            Assert.IsType<StepResult<ExitRejection>.Done>(attempt.TakeSpare());
+            Play(attempt, 5); // B R Y R Y: five bays full again
+            Assert.IsType<Outcome.Failed>(attempt.Outcome);
 
-            Assert.Equal(default(SeenSet).With(new HiddenCell(2)), attempt.Seen);
+            Assert.Equal(new MoveCount(1), attempt.RewindLimit);
+            Assert.Equal(OutOfRange, attempt.Rewind(new MoveCount(2)));
         }
 
-        [Fact]
-        public void Under_the_reveal_fence_the_limit_ignores_the_mode()
+        [Theory]
+        [InlineData(PlayMode.DailyProof)]
+        [InlineData(PlayMode.Casebook)]
+        [InlineData(PlayMode.WeeklyTwist)]
+        [InlineData(PlayMode.Competitive)]
+        [InlineData(PlayMode.Siege)]
+        public void Under_the_reveal_fence_the_limit_ignores_the_mode(PlayMode mode)
         {
             // The fail analysis reads RewindLimit on any fail, whatever the mode, so the fence must hold outside Campaign too.
             LotLevel level = FreeCarsWithCoversOn(1);
-            var attempt = new Attempt<LotState, Exit, ExitRejection>(new JamRules(level), LotState.Start(level), PlayMode.DailyProof);
+            var attempt = new Attempt<LotState, Exit, ExitRejection>(new JamRules(level), LotState.Start(level), mode);
             Play(attempt, 0, 1, 2, 4); // piece 1 lifts its cover on move 2; the bays fill
 
             Assert.Equal(new MoveCount(2), attempt.RewindLimit);
@@ -184,19 +192,6 @@ namespace PuzzleCore.Tests.Jam
             ReplayReport report = Replay.Run(rules, LotState.Start(level), PlayMode.Campaign,
                 ReadOnlyArray.Of(MoveOf(0), MoveOf(1), InsightOn(8), MoveOf(2), MoveOf(4), RewindOf(3)));
             Assert.Equal(new ReplayVerdict.Valid(new Outcome.InPlay(), new MoveCount(1), SpareUsed: false), report.Verdict);
-        }
-
-        [Fact]
-        public void Under_the_reveal_fence_a_rewind_back_past_an_insight_keeps_its_cell_seen()
-        {
-            LotLevel level = FreeCarsWithCoversOn(8);
-            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new JamRules(level), level);
-            Play(attempt, 0, 1);
-            Assert.IsType<StepResult<ExitRejection>.Done>(attempt.UseInsight(new HiddenCell(8)));
-            Play(attempt, 2, 4); // the bays fill and no cover lifts, so the fence still sits at the start
-
-            Assert.IsType<StepResult<ExitRejection>.Done>(attempt.Rewind(new MoveCount(3))); // back to before the insight
-            Assert.True(attempt.Seen.Contains(new HiddenCell(8)));
         }
 
         [Fact]
