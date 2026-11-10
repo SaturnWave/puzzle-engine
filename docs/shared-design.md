@@ -6,7 +6,7 @@ This file is the one copy of the design that Covered Lot and Sealed Vials share:
 - **Sketches:** a phase that changes a type sketched here updates the sketch in the same branch.
 - **Ids:** decision ids (Q1-Q56, TC1-TC19, U1-U10) are those in Appendix A of Covered Lot's plan, `CoveredLot/docs/development-plan.md`. Phase ids (P0-P19, W1, W2) are that plan's phases, unless a line names the Sealed Vials plan.
 - **Sessions:** a *game session* is a play session (§7). In names such as `ThisSession` and `session_start`, "session" means a game session. "The two sessions" are the Claude Code sessions that build the games: the Covered Lot session and the Sealed Vials session.
-- **Sources:** `GAME_DESIGN.md` (Rule of Rows), the report and the other source documents are in `CoveredLot/docs/sources` (Q12, Q38).
+- **Sources:** `GAME_DESIGN.md` (Rule of Rows), the report (`Puzzle-Type-Octalysis.md`) and the other source documents are in `CoveredLot/docs/sources` (Q12, Q38).
 
 ## Shared engine (used by both games)
 
@@ -46,7 +46,7 @@ covered-lot/                           (Covered Lot's game repo, with its own Un
   Assets/SealedVials/  SealedVials.Client.asmdef    -> Shared.Client, PuzzleCore, PuzzleCore.Sort
 ```
 
-- **Layering:** `Sort` and `Jam` depend only on `PuzzleCore` and never on each other (nor would a later hybrid module). `Bot` references Core and Jam (P5); Sort is added when Sort's bots are built. `Validation` depends on Core, Sort and Jam. `PuzzleMeta` depends on nothing in the engine, holds no rules and is never referenced by Core, Sort, Jam, Bot or Validation. `PuzzleClient` references PuzzleCore (P8). Nothing under `src/` (except the Cloud Code adapter) references UnityEngine or UGS. Enforce this with the `UnityBoundApiPolicy` and the architecture guard tests.
+- **Layering:** `Sort` and `Jam` depend only on `PuzzleCore` and never on each other (nor would a later hybrid module). `Bot` references Core and Jam (P5); Sort is added when Sort's bots are built. `Validation` references Core and Jam (P6); Sort is added when the Sort module is built. `PuzzleMeta` depends on nothing in the engine, holds no rules and is never referenced by Core, Sort, Jam, Bot or Validation. `PuzzleClient` references PuzzleCore (P8). Nothing under `src/` (except the Cloud Code adapter) references UnityEngine or UGS. Enforce this with the `UnityBoundApiPolicy` and the architecture guard tests.
 - **Shared client package:** logic and plain building blocks only: the offer-screen logic, the analytics adapter, the game-session and day counters, input and the UI kit. Each game styles its own screens. The package has its own tests, which both Unity projects run. The first session to reach its Unity work creates it in the engine repo and names its folder; the other extends it additively (Covered Lot: P11).
 - **No extra runtime DLLs:** Core uses its own `ReadOnlyArray<T>` instead of `ImmutableArray<T>`, so `sync-engine.sh` does not have to stage System.Collections.Immutable for Unity.
 - **Portability:** the Cloud Code adapter is the only piece that depends on UGS. To move the server later, write a new adapter (for example an ASP.NET endpoint) around the same `IReplayValidator`.
@@ -82,7 +82,7 @@ public interface IPuzzleState<TSelf> : IEquatable<TSelf> where TSelf : struct, I
     ExactKey Exact { get; }          // 128-bit FNV-1a over all packed words in id order: replays, rewind, golden tests
     CanonicalKey Canonical { get; }  // reduced: the solver's transposition table only
 }
-// SortState: ≤14 vials (13 + one spare) × 4 layers × 4-bit ColourId = 4 ulongs, plus one ulong for the 56-bit
+// SortState (not in code yet; the Sealed Vials plan): ≤14 vials (13 + one spare) × 4 layers × 4-bit ColourId = 4 ulongs, plus one ulong for the 56-bit
 //            HiddenMask and the 4-bit vial count. Canonical: vial words sorted by (word, hidden-mask nibble).
 // LotState:  exited mask (≤24 bits) + slot order (≤8 slots × 4 bits, i.e. 7 + one spare) + slot count. Geometry
 //            lives in the level. Canonical: exited mask + slot count (slot order matters only to ExactKey).
@@ -107,7 +107,7 @@ public interface IPuzzleRules<TState, TMove, TRejection>    // TRejection: the g
     CapacityCount CapacityOf(in TState state);                  // capacity in play, spare included (for SpareAdded)
     RewindFence RewindFence { get; }                            // how far back a rewind may reach
 }
-// Moves: Sort `Pour(VialId From, VialId To)`; Jam `Exit(PieceId Piece)`.
+// Moves: Sort `Pour(VialId From, VialId To)` (not in code yet); Jam `Exit(PieceId Piece)`.
 public enum RewindFence { None, AtReveal }   // AtReveal: never back past the last move that revealed a hidden cell.
                                              // Both games use AtReveal (Q3, Q19); Jam moves from None to it in P1.
 // P6 (not in code yet): the "which cells are hidden now" query becomes a new optional interface next to
@@ -137,9 +137,10 @@ public abstract record SolveResult<TMove> { private SolveResult() { }
     public sealed record Solved(ReadOnlyArray<TMove> Path) : SolveResult<TMove>;  // Path.Length = Par
     public sealed record Unsolvable : SolveResult<TMove>;
     public sealed record BudgetExceeded(NodeCount NodesUsed) : SolveResult<TMove>; }
-// Solver: BFS for small boards, IDA* with an integer admissible heuristic otherwise (Jam: its own feasibility DFS
-// behind the same SolveResult). The transposition table is a fixed-size array keyed by CanonicalKey (bounded);
-// a collision replaces the old entry (eviction policy).
+// Solver (not in code yet; Sort's, in the Sealed Vials plan): BFS for small boards, IDA* with an integer admissible
+// heuristic otherwise; its transposition table is a fixed-size array keyed by CanonicalKey (bounded), where a
+// collision replaces the old entry. Jam has its own feasibility DFS (LotSolver) behind the same SolveResult, with a
+// fixed-size dead-mask table.
 public interface IPositionSolver<TState, TMove>   // each game supplies one (Jam: LotPositionSolver)
 {
     SolveResult<TMove> SolveFrom(in TState state, NodeBudget budget);  // full information, from any position in play
@@ -231,10 +232,11 @@ public interface IBotProfile { BotProfileId Id { get; } BotSearch Search { get; 
 public abstract record BotSearch { private BotSearch() { }      // draws from RandomPurpose.Bot
     public sealed record Limited(MoveCount LookaheadPlies, DeductionRung Ceiling) : BotSearch;  // sees what players see
     public sealed record FullSolver : BotSearch; }              // Expert only: full information, within its NodeBudget
+// Covered Lot's Greedy fits neither case yet: it reads every cover (Q40) and looks no move ahead. P5 adds its shape.
 public enum BotEndReason { Won, NoLegalMove, SlotsFull, Cycle, StepCap }
 // Every bot run terminates: on Failed, on a repeated ExactKey within the run (Cycle), or after Par × 3 moves
 // (StepCap; the factor is an estimate). Covered Lot runs end in Won or SlotsFull.
-// How a bot plays (TC12): it deduces up to its Ceiling and guesses the rest consistently with the ledger, the tags and
+// How Covered Lot's bots play (TC12; Sealed Vials settles its own in its session, Q39): it deduces up to its Ceiling and guesses the rest consistently with the ledger, the tags and
 // the cells it knows; after each reveal it deduces again. A mistake is a random other legal move, at the profile's
 // Mistakes rate (Covered Lot starts Planner1 at 150‰ and Planner3 at 50‰). Every draw comes from the run's Bot stream.
 // Bots play through the shared Attempt, so the near miss keeps one definition, and they take no rescues.
@@ -273,21 +275,21 @@ public enum InvalidReason { IllegalMove, SpareOutsideFail, SecondSpare, RewindOu
   - **D3:** a tag that works only through a hidden cell deduced earlier, or one tag or the ledger counting over several unknown cells. Forcing a colour by count over unknown cells is D3 (Q41).
   - A level's rung is its hardest step. A case split is `NeedsGuess`, and such levels are rejected.
   - **Exact rung (Q17):** every clue slot in a campaign grades exactly at its slot's rung, or is rejected. This is a generator rule, not part of the ship certificate (TC10). If a rung's build rate falls below 90%, the user gets the numbers first.
-  - **In code:** Covered Lot's P3 switches `LotClues` to this ladder: covered levels are pinned first, then re-pinned once after a per-slot diff, with the user's approval (TC10). P3 also removes the third definition: the `DeductionRung` doc comment and the unused `ForUnknownCount` (Q5). Sort's grader is built on this ladder once P3 is on `master`.
-- **Fail offer (identical in both games; confirmed, Q44):** every Campaign fail shows the offer screen until 4 have been shown in the game session (each one counts), then a free retry only; a concede never shows it. Copy: "This offer only appears when one more vial (bay) can still win" and "A rewind of up to 5 moves can still win", never which length. Rewind is sold only there, and only when it can still win: no paid rewind on either HUD, no free undo. The rewarded ad grants +1 spare on `Yes`, otherwise a free rewind. A game session ends after 30 minutes in the background (§7).
+  - **In code:** Covered Lot's P3 switches `LotClues` to this ladder: covered levels are pinned first, then re-pinned once after a per-slot diff, with the user's approval (TC10). P3 also removes the third definition: the `DeductionRung` doc comment and the unused `ForUnknownCount` (Q5). Sort's grader follows this text; once P3 is on `master`, the code's ladder matches it.
+- **Fail offer (identical in both games; confirmed, Q44):** every Campaign fail shows the offer screen until 4 have been shown in the game session (each one counts), then a free retry only; a concede never shows it. Each game's onboarding may hold the offer back on its first levels (Covered Lot: P10 sets the level where it first appears). Copy: "This offer only appears when one more vial (bay) can still win" and "A rewind of up to 5 moves can still win", never which length. Rewind is sold only there, and only when it can still win: no paid rewind on either HUD, no free undo. The rewarded ad grants +1 spare on `Yes`, otherwise a free rewind. A game session ends after 30 minutes in the background (§7).
 - **Fail cause for analytics** (`FailCause`, in PuzzleCore next to `FailAnalysis`; built in Covered Lot's P2; Q2, Q20, Q23-Q26, TC1, TC5, TC9): a cause is given for every fail, and only for fails: never for a concede, a retry or a quit (Q23, Q24). The losing move is the move that left the last winnable position.
   - **The scan:** it goes back from the fail to the first winnable position, with one budgeted solve per position, using each game's position solver. A binary search is allowed, because a lost line never becomes winnable again. It never scans behind the spare. The caller passes a node budget for each position, with no default until the bench; the first overrun gives `Unknown` (TC5, TC9).
-  - **Deduction:** the losing move involved a hidden cell, judged with the attempt's `SeenSet` from just before that move, because the losing move reveals its own cell (TC5). Jam: the losing move sent out a vehicle that started covered and was not in that `SeenSet` (Q2, Q20, Q25); the label looks only at the losing move's own vehicle. Sort: the losing move poured from or into a vial that held a layer not in that `SeenSet`.
+  - **Deduction:** the losing move involved a hidden cell, judged with the attempt's `SeenSet` from just before that move, because the losing move reveals its own cell (TC5). Jam: the losing move sent out a vehicle that started covered and was not in that `SeenSet` (Q2, Q20, Q25); the label looks only at the losing move's own vehicle. Sort: the losing move poured from or into a vial that held a layer that started hidden and was not in that `SeenSet` (Q20). This Sort label is a *proposal*: the Sealed Vials session settles it in its own grilling (Q39).
   - **Capacity:** every other losing move, including (Jam) every open vehicle.
   - **Unknown:** a solve hit its budget.
   - **Position:** the result carries `losing_move_back` (1 = the last move), absent when the cause is `Unknown` (Q23, TC9).
 
-  It is logged for every fail and never shown to players or sold, because an exact "rewind to the last winnable position" sells the answer. The playtest's fail screen and the Unity debug overlay show it on a debug line (Q26, TC19). The bench decides from measured cost whether the cause is worked out on the phone or offline from records (TC9; Covered Lot P9).
+  It is logged for every fail and never shown to players or sold, because an exact "rewind to the last winnable position" sells the answer. The playtest's fail screen and Covered Lot's Unity debug overlay show it on a debug line (Q26, TC19); Sealed Vials' screens are its session's (Q47). The bench decides from measured cost whether the cause is worked out on the phone or offline from records (TC9; Covered Lot P9).
 - **Rewind, the fence and the `SeenSet`:** in both games `Rewind(n)` restores the exact earlier state, where n counts `Move` actions, from 1 to the attempt's `RewindLimit`. A rewind never goes back past the last move that revealed a hidden cell (`RewindFence.AtReveal`, a shared rule: Q3, Q19), so a paid rewind sells planning, never a second look. It never removes a spare already taken. `UseInsight` never moves the fence; a move that reveals a cell already shown by Insight does.
   - The `SeenSet` (hidden cells seen revealed, or shown by `UseInsight`, which changes nothing else) belongs to the attempt (Q22). It lives outside the rules state, and the rules never read it. Replaying the record rebuilds it. It grows within the attempt.
   - In both games, "hidden" means not in the attempt's `SeenSet` (Q20).
   - A retry starts fresh (Q22, Q42): a new attempt, whose `SeenSet` holds only the level's Insight cell. Every other revealed cell is drawn hidden again (Jam: covered again), and pencil marks clear.
-  - The client shows the `SeenSet` as automatic pencil marks (Sort) or lifted covers (Jam).
+  - The client shows the `SeenSet` as lifted covers (Jam). Sealed Vials proposes automatic pencil marks for seen layers; its session settles that (Q39).
   - `Attempt` sees reveals through its events: today only Jam's `CoverLifted`. Sort's `LayerRevealed` joins there with the Sort module, or `AtReveal` does nothing for Sort.
 - **Insight (Q27, Q28):** one Insight shows one hidden cell (`UseInsight(cell)`), in Campaign only.
   - Covered Lot: it works only on a covered vehicle that is still in the lot and not yet seen, and only while the attempt is in play. A refused Insight is not spent; the refusal is a new value, `InsightUnavailable`, at the end of `InvalidReason` (TC13; P6).
@@ -297,13 +299,13 @@ public enum InvalidReason { IllegalMove, SpareOutsideFail, SecondSpare, RewindOu
   - format `pc-record`, `formatVersion`, `game` (`Sort`/`Jam`), `mode` (the `PlayMode` name), level `{packId, levelId, fingerprint}` and `rulesVersion`. From P4 on, level ids have the form `{packId}-{slot:0000}` (TC14);
   - the actions `Move`, `Rewind(n)`, `TakeSpare`, `UseInsight(HiddenCell)` and `Concede`, each with `sincePreviousMs` stamped by the client. Illegal moves cost nothing and are never recorded.
 
-  `Undo` is reserved: neither game emits it, and it can be added later by addition. The validator returns `Invalid(at, BoosterInCompetitiveMode)` for `TakeSpare`, `Rewind` or `UseInsight` outside Campaign. The reader and writer follow Classic's `RecordJson`. The format is a public contract: it changes only by addition, with a version bump.
+  `Undo` is reserved: neither game emits it, and it can be added later by addition. The validator returns `Invalid(at, BoosterInCompetitiveMode)` for `TakeSpare`, `Rewind` or `UseInsight` outside Campaign. The reader and writer are PuzzleCore's `RecordJson` (`Records/RecordJson.cs`), modelled on the Block engine's Classic `RecordJson`. The format is a public contract: it changes only by addition, with a version bump.
 - **Packs (Q29, Q30, TC14; built in Covered Lot's P7):** one JSON container after Rule of Rows §16, for both games.
-  - **Header:** format, formatVersion, packId, packVersion, `rulesVersion` (in place of Rule of Rows' `grammarVersion`), `generatorVersion` and `game`.
+  - **Header:** format, formatVersion, packId, packVersion, `rulesVersion` (in place of Rule of Rows' `grammarVersion`: Covered Lot plan, Appendix C change 4), `generatorVersion` and `game`.
   - **Levels:** id `{packId}-{slot:0000}`, slot, fingerprint, and the canonical level text embedded as is.
   - **Retired:** a list of retired levels.
   - A rejected slot is left out of the pack and listed in the pack's build report. Players see level numbers without gaps.
-  - **`generatorVersion`:** version 1 is the generator as it stands at P7, after the ladder switch and with the novelty gate. From version 1 on, any change that alters generated content bumps it, and old versions are not kept runnable (Q29).
+  - **`generatorVersion`:** version 1 is the generator as it stands at P7, after the ladder switch and with the novelty gate (Covered Lot plan, Appendix C change 3). From version 1 on, any change that alters generated content bumps it, and old versions are not kept runnable (Q29).
   - Grades go in a separate `{packId}.presentation.json` with each level's grade fields. Players see no tiers or labels until the difficulty pass (TC11).
   - **Pins:** the covered-levels pin (P3, re-pinned once) and the golden pack pin: the SHA-256 of the canonical pack for `golden-gen` slots 0-99, plain and covered, with the presentation file pinned separately. Today's plain golden hash stays pinned (Q30, TC14).
 - **Events:** golden replays compare the `PuzzleEvent` sequence, the outcome and the final `ExactKey`.
@@ -311,7 +313,7 @@ public enum InvalidReason { IllegalMove, SpareOutsideFail, SecondSpare, RewindOu
 
 ### 3. Determinism rules
 
-- [ ] Integer maths only in Core, Sort, Jam, Bot, Validation, Meta and Client. No `float`/`double`/`decimal` (IL guard). Ratios are `PerMille` integers.
+- [ ] Integer maths only in Core, Sort, Jam, Bot, Validation, PuzzleMeta and PuzzleClient. No `float`/`double`/`decimal` (IL guard). Ratios are `PerMille` integers.
 - [ ] No `System.Random`, `DateTime`, `Stopwatch`, `Environment.TickCount` or `Guid.NewGuid` in the core. Time enters only as recorded `sincePreviousMs`. Game-session and day counts enter only through `OfferContext`, `RewardedAdCapState` and `LevelEndContext`.
 - [ ] Never iterate `Dictionary`/`HashSet` where the order affects output. Use arrays indexed by id, or sort by key first.
 - [ ] Stable sorting only: an explicit `(key, id)` tiebreak or insertion sort on small arrays. Never rely on `Array.Sort` stability.
@@ -373,7 +375,7 @@ Both games log the same events from the greybox onward, with `game` = `sort` or 
 | Move | `IPuzzleRules` contract, typed rejection | `Pour(from, to)` | `Exit(piece)`: leaves only if the path is clear |
 | Win/fail | `Outcome`, `FailKind` | all vials single-colour / no legal pour | lot cleared / all bays full after clears |
 | Spare (rescue) | `TryWithOneSpare`, near-miss check, one per attempt | +1 empty vial (≤ 14) | +1 holding slot (≤ 8) |
-| Rewind / reveals | exact `Rewind(n)` up to the fence (`AtReveal`), the attempt's `SeenSet` | seen layers as automatic pencil marks | seen covers drawn as lifted |
+| Rewind / reveals | exact `Rewind(n)` up to the fence (`AtReveal`), the attempt's `SeenSet` | seen layers as automatic pencil marks (*proposal*) | seen covers drawn as lifted |
 | Clues | `IClueModel`, `Uniqueness`, the D1-D3 ladder, the clue check | tags + shelf ledger | tags on covered pieces + ledger (original rule set) |
 | Generator | Pcg32, purposes, try schedule, the JSON pack container | reverse-pour scramble; `pc-sort` text | reverse-exit scramble, `LotLoader`; `pc-lot` text |
 | Solver/grader/bots | `SolveResult`, BFS/IDA*, `LevelGrade`, `IBotProfile`, bot termination | heuristic: Σ (vials holding a colour − 1) | feasibility DFS; "blocked exits + slot pressure" bound only if `bench` needs it |
@@ -405,7 +407,7 @@ public static class RealMoney { public static RealMoneyLabel For(Gold price, IRe
 - **Caps (Q4):** at most 4 fail screens per game session. Rewarded ads: at most 1 per attempt (K8), none in the player's first game (K24), 2 per game session and 5 per UTC day. When the first game ends, at the first won level or at the first level that ends, is decided in Covered Lot's P12 (its plan's Appendix C, change 2).
 - **Game session (Q44):** runs from app foreground until the app has been in the background for 30 minutes. **Day:** the UTC day, with the same 00:00 UTC rollover as the daily (E1). The shared client package counts both and passes them into `OfferContext` / `RewardedAdCapState`, and into `LevelEndContext` for interstitials. The engine never reads a clock.
 
-**Confirmed by you on 2026-11-07 (both games):**
+**Confirmed by the user on 2026-11-07 (both games):**
 - **Gold is sold for real money.** The gold packs and the starter pack are real IAP from soft launch on. Every gold price shows its real-money equivalent on the same screen (`RealMoney.For`). `GoldNotSold` is left only for a storefront that has no gold pack.
 - **Pastel Rows' ad rules carry over:** interstitials under K8's caps, rewarded ads under K8, and a Remove Ads purchase. Since then, K8 and K24 apply in full, narrowed by Q43 (Q33): see the ad rules below.
 
@@ -431,8 +433,8 @@ public static class RealMoney { public static RealMoneyLabel For(Gold price, IRe
 - **Rewarded-ad day limit:** once a player has watched N rewarded ads in a day, no interstitial shows for the rest of that day. N comes from the economy simulator. **Here:** the day is the UTC day, N starts at 3 (Q33), and the simulator re-derives it (P14).
 - **The first game:** everyone is asked once, after the first finished game, a neutral birth-year question, and only the age band is stored. So no ad continue is offered in the player's first game (a small exception to K8's first placement); the gold continue stays open. **Here:** when the first game ends is decided in Covered Lot's P12 (see "Caps").
 - **Consent and content:** Google's consent form in the EEA, the UK and Switzerland. No personalised ads under 18. Ad content is capped at G under 13 and at PG for everyone else, and the gambling, alcohol, social casino, dating, "get rich quick", sexual reference and sensational categories are blocked. **Here:** K24's own consent card for Turkey (KVKK) and its seller clause are not carried over, because the Block decision K37 voided them for the same accounts (Covered Lot plan, Appendix C change 9).
-- **iOS tracking (ATT):** asked only of players 18 and over, after the first finished games and the regional consent; refusing changes nothing. On Android, the advertising-id permission stays and is managed with the consent.
-- **Here (Q43):** K24's purchase side (the products and prices, the 28-day pass, the under-18 purchase gate, the IAP plugin and its version, refunds of gold) is decided in production (Covered Lot P14 and P15). Prices are inputs.
+- **iOS tracking (ATT):** asked only of players 18 and over, after the first finished game and the regional consent; refusing changes nothing. On Android, the advertising-id permission stays and is managed with the consent.
+- **Here (Q43):** K24's purchase side (the products and prices, its rule of no random products and no subscriptions, the 28-day pass, the under-18 purchase gate, the IAP plugin and its version, refunds of gold) is decided in production (Covered Lot P14 and P15). There, its no-random-products rule meets the 2026-11-07 "Paid random rewards: yes" below. Prices are inputs.
 
 *T33, days and anchors:* daily counters reset at 00:00 UTC (E1), and weeks start on Monday at 00:00 UTC (K9). K8's "first 3 days" are 72 hours from the moment the server created the account, and a device with no account sees no interstitials. **Here:** with no account, the 72 hours count from the app's first launch (Q34).
 
@@ -463,7 +465,7 @@ public abstract record InterstitialSlot
 public static class Interstitials { public static InterstitialSlot After(LevelEndContext context); }  // pure
 ```
 
-**Decided by you on 2026-11-07, second round (both games):**
+**Decided by the user on 2026-11-07, second round (both games):**
 - **Lives: yes**, with a refill timer.
 - **One currency for now:** gold only (K12 holds, for now).
 - **No boosters in competitive modes:** K7 holds.
@@ -495,14 +497,14 @@ public static class Interstitials { public static InterstitialSlot After(LevelEn
 - Only `Campaign` allows `TakeSpare`, `Rewind` and `UseInsight`. The validator enforces this for every other `PlayMode` (K7).
 - **Daily (both games; the Proof and the Daily Lot are both `DailyProof`):**
   - It rolls over at **00:00 UTC** (E1).
-  - **Seed (one format for both games, *proposal*):** the one-level pack `daily-{game}-{yyyy-MM-dd}` (UTC date, built like a stream key), whose `PackSeed` comes from that pack id through `SeedDerivation`.
+  - **Seed (one format for both games, *proposal*):** the one-level pack `daily-{game}-{yyyy-MM-dd}` (UTC date, built like a stream key), whose seed is `Seed.ForPack` of that pack id (§2).
   - Only the **first attempt** counts toward "X% solved it unaided": N = 1 counted attempt, in both games (Q9). Later retries are practice: they are logged with `proof_result.counted = false` and not counted.
   - Rule of Rows chose 1 because a rule board's answer is revealed after the first attempt; K9's block daily uses 3.
   - No interstitial follows a `DailyProof` result (Q35, §7).
 
 ## Shared plan
 
-The dated shared plan, the cross-game decision and the hybrid options that stood here are retired. Each game has its own plan, with phases and gates and no dates (Q50):
+The dated shared plan and the cross-game decision that stood here are retired, and the hybrid options shrink to the idea below. Each game has its own plan, with phases and gates and no dates (Q50):
 - **Covered Lot:** `CoveredLot/docs/development-plan.md`.
 - **Sealed Vials:** its own plan, written in the Sealed Vials session (Q50, Q56).
 
@@ -538,7 +540,7 @@ Covered Lot and Sealed Vials are built in parallel, each by its own Claude Code 
   1. Merge `master` into the phase branch and re-run the checks. Each session takes in the latest `master` before merging (Q53).
   2. Fast-forward `master` with `git fetch . <branch>:master`. If git refuses, `master` has moved: take it in again and repeat.
   3. Push `master` to GitHub.
-- **Checks before a merge:** `dotnet test` under tr-TR and under sv-SE, no build warnings, and `dotnet build clients/Playtest`.
+- **Checks before a merge:** `dotnet test` under tr-TR and under sv-SE, no build warnings, and `dotnet build clients/Playtest`. Before an engine phase is merged, a read-only review checks the change, and hand-made mutants of the new code each make the tests fail (Covered Lot plan, Appendix C new item 2).
 - **Shared parts:** PuzzleCore; the build files and the test setup; the golden pins; this file; the shared client package; the Unity editor version.
 - **Contracts (Q53):** every change to a shared part is small and additive, PuzzleCore included, and it is merged as soon as its checks pass. The exceptions:
   - P3's removal of `ForUnknownCount` (Q5), the one exception approved with the plan. The Covered Lot session tells the Sealed Vials session before merging it;
@@ -559,7 +561,7 @@ Covered Lot and Sealed Vials are built in parallel, each by its own Claude Code 
 |---|---|---|---|
 | The rewind fence for Covered Lot (`JamRules.RewindFence` = `AtReveal`) | Covered Lot session | P1 | `Attempt` already applies `AtReveal` for a game that names it. Sort names it, and adds `LayerRevealed` to the reveals `Attempt` sees, with its events |
 | `FailCause`, next to `FailAnalysis`, and `losing_move_back` in `fail_detail` | Covered Lot session | P2 | No cause exists in code; §2's definition is the target. Each game supplies its own position solver and hidden check (TC1) |
-| The deduction ladder in code: `LotClues` switched; `ForUnknownCount` and the third definition removed | Covered Lot session | P3 | The ladder text in §2 is the target; the code still grades with the old mapping. Sort's grader starts only once P3 is on `master`. The Covered Lot session tells the Sealed Vials session before merging the removal |
+| The deduction ladder in code: `LotClues` switched; `ForUnknownCount` and the third definition removed | Covered Lot session | P3 | The ladder text in §2 is the target; the code still grades with the old mapping. Until then, a Sort grader follows the §2 text, not the code's old mapping. The Covered Lot session tells the Sealed Vials session before merging the removal |
 | Grades: `PlanGrade`, `LevelGrade`, `LevelKind`, the presentation file, level ids `{packId}-{slot:0000}` | Covered Lot session | P4 | Only `DeductionGrade` and `DeductionRung` exist |
 | `PuzzleCore.Bot`, `IBotProfile` and `sim` | Covered Lot session | P5 | No bot code exists. Sort's profiles and bots are the Sealed Vials session's, added to the project additively |
 | `PuzzleCore.Validation` (`IReplayValidator`), `InsightUnavailable`, the hidden-cell interface and `validate` | Covered Lot session | P6 | The interface is optional, so Sort's rules keep compiling without it (TC6). Whether the Insight refusals bind Sealed Vials is decided in its grilling |
