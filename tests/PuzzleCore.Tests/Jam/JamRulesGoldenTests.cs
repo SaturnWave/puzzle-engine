@@ -3,6 +3,7 @@ using PuzzleCore.Jam;
 using PuzzleCore.Rules;
 using Xunit;
 using static PuzzleCore.Tests.Jam.Boards;
+using static PuzzleCore.Tests.Jam.JamEvents;
 
 namespace PuzzleCore.Tests.Jam
 {
@@ -17,7 +18,7 @@ namespace PuzzleCore.Tests.Jam
             var events = new List<PuzzleEvent>();
             int peak = 0;
 
-            foreach (int piece in new[] { 0, 3, 4, 2, 8, 5, 1, 6, 7 })
+            foreach (int piece in BriefsWinningLine)
             {
                 var applied = Assert.IsType<MoveResult<LotState, ExitRejection>.Applied>(rules.TryApply(state, new Exit(new PieceId((byte)piece))));
                 peak = System.Math.Max(peak, ParkedSlot(applied.Events) + 1);
@@ -27,21 +28,7 @@ namespace PuzzleCore.Tests.Jam
 
             Assert.IsType<Outcome.Won>(rules.Evaluate(state));
             Assert.Equal(3, peak);
-            Assert.Equal(
-                new PuzzleEvent[]
-                {
-                    Exited(0, 0),
-                    Exited(3, 1), new PuzzleEvent.CoverLifted(new PieceId(3), Blue),
-                    Exited(4, 2), Cleared(Blue, 0, 1, 2),
-                    Exited(2, 0),
-                    Exited(8, 1),
-                    Exited(5, 2), Cleared(Yellow, 0, 1, 2),
-                    Exited(1, 0),
-                    Exited(6, 1),
-                    Exited(7, 2), new PuzzleEvent.CoverLifted(new PieceId(7), Red), Cleared(Red, 0, 1, 2),
-                    new PuzzleEvent.Won(),
-                },
-                events);
+            Assert.Equal(OfTheBriefsWinningLine(), events);
         }
 
         [Fact]
@@ -222,19 +209,6 @@ namespace PuzzleCore.Tests.Jam
             }
 
             return -1;
-        }
-
-        private static PuzzleEvent Exited(int piece, int slot) => new PuzzleEvent.Exited(new PieceId((byte)piece), new SlotIndex((byte)slot));
-
-        private static PuzzleEvent Cleared(ColourId colour, params int[] slots)
-        {
-            var indices = new List<SlotIndex>();
-            foreach (int slot in slots)
-            {
-                indices.Add(new SlotIndex((byte)slot));
-            }
-
-            return new PuzzleEvent.SetCleared(colour, ReadOnlyArray.CopyOf(indices));
         }
     }
 }

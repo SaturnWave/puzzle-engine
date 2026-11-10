@@ -309,7 +309,7 @@ public enum InvalidReason { IllegalMove, SpareOutsideFail, SecondSpare, RewindOu
   - **`generatorVersion`:** version 1 is the generator as it stands at P7, after the ladder switch and with the novelty gate (Covered Lot plan, Appendix C change 3). From version 1 on, any change that alters generated content bumps it, and old versions are not kept runnable (Q29).
   - Grades go in a separate `{packId}.presentation.json` with each level's grade fields. Players see no tiers or labels until the difficulty pass (TC11).
   - **Pins:** the covered-levels pin (P3, re-pinned once) and the golden pack pin: the SHA-256 of the canonical pack for `golden-gen` slots 0-99, plain and covered, with the presentation file pinned separately. Today's plain golden hash stays pinned (Q30, TC14).
-- **Events:** golden replays compare the `PuzzleEvent` sequence, the outcome and the final `ExactKey`.
+- **Events:** golden replays compare the `PuzzleEvent` sequence, the outcome and the final `ExactKey` of a valid record, and the `Invalid` action index and reason of a record kept to be refused (§4).
 - **Server cost:** the validator replays the moves, which costs time linear in the move count. It never solves the board again.
 
 ### 3. Determinism rules
@@ -327,7 +327,7 @@ public enum InvalidReason { IllegalMove, SpareOutsideFail, SecondSpare, RewindOu
 
 | Test | Checks |
 |---|---|
-| Golden replays | Each committed `pc-record` pins its expected verdict. A valid record reproduces the same `PuzzleEvent` sequence, outcome and final `ExactKey`; a record kept to be refused gives the same `Invalid` action index and reason (Jam's `six-by-six-rewind-across-reveal`: action 4, `RewindOutOfRange`). They also run in Unity's `EngineSmokeTest` |
+| Golden replays | The golden replay tests pin each committed `pc-record`'s expected verdict; the files carry none. A valid record reproduces the same `PuzzleEvent` sequence, outcome and final `ExactKey`; a record kept to be refused gives the same `Invalid` action index and reason (Jam's `six-by-six-rewind-across-reveal`: action 4, `RewindOutOfRange`). They also run in Unity's `EngineSmokeTest`, which lists the same expected verdicts |
 | Golden generator packs | The golden pack pin: the SHA-256 of the canonical pack for `golden-gen` slots 0-99, plain and covered, per `generatorVersion`, including the try schedule; the presentation file is pinned separately, and today's plain golden hash stays. The covered-levels pin. Re-pinned only with the user's approval (Q30) |
 | Apply/rewind property | For random legal move sequences, `Rewind(n)` returns the exact earlier `ExactKey`, no accepted rewind crosses the last reveal, and the `SeenSet` only grows within the attempt. `TryApply` never mutates its input |
 | Key split | Sort: permuting identical vials changes `ExactKey` but not `CanonicalKey`. Jam: the same exited set with a different slot order shares the `CanonicalKey` and differs in `ExactKey` |

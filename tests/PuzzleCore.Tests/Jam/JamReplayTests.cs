@@ -9,6 +9,7 @@ using PuzzleCore.Rules;
 using PuzzleCore.Tests.Support;
 using Xunit;
 using static PuzzleCore.Tests.Jam.Boards;
+using static PuzzleCore.Tests.Jam.JamEvents;
 
 namespace PuzzleCore.Tests.Jam
 {
@@ -26,8 +27,7 @@ namespace PuzzleCore.Tests.Jam
             ReplayReport report = ReplayGolden("six-by-six-win.pc-record.json");
 
             Assert.Equal(new ReplayVerdict.Valid(new Outcome.Won(), new MoveCount(9), SpareUsed: false), report.Verdict);
-            Assert.Equal(15, report.Events.Count); // 9 exits, 2 covers lifted, 3 sets, 1 win
-            Assert.Equal(new PuzzleEvent.Won(), report.Events[report.Events.Count - 1]);
+            Assert.Equal(OfTheBriefsWinningLine(), report.Events);
         }
 
         [Fact]
@@ -36,14 +36,33 @@ namespace PuzzleCore.Tests.Jam
             ReplayReport report = ReplayGolden("six-by-six-rescue.pc-record.json");
 
             Assert.Equal(new ReplayVerdict.Valid(new Outcome.Won(), new MoveCount(9), SpareUsed: false), report.Verdict);
-            Assert.Contains(new PuzzleEvent.Failed(FailKind.SlotsFull), report.Events);
-            Assert.Contains(new PuzzleEvent.Rewound(new MoveCount(2)), report.Events);
+            Assert.Equal(
+                new PuzzleEvent[]
+                {
+                    Exited(0, 0),
+                    Exited(3, 1), new PuzzleEvent.CoverLifted(new PieceId(3), Blue),
+                    Exited(1, 2),
+                    Exited(8, 3), new PuzzleEvent.Failed(FailKind.SlotsFull),
+                    new PuzzleEvent.Rewound(new MoveCount(2)),
+                    Exited(1, 2),
+                    Exited(4, 3), Cleared(Blue, 0, 1, 3),
+                    Exited(2, 1),
+                    Exited(5, 2),
+                    Exited(8, 3), Cleared(Yellow, 1, 2, 3),
+                    Exited(6, 1),
+                    Exited(7, 2), new PuzzleEvent.CoverLifted(new PieceId(7), Red), Cleared(Red, 0, 1, 2),
+                    new PuzzleEvent.Won(),
+                },
+                report.Events);
         }
 
         [Fact]
-        public void The_win_and_rescue_records_end_in_the_same_won_state()
+        public void The_win_and_rescue_records_end_in_the_won_state_the_rules_reach()
         {
-            Assert.Equal(ReplayGolden("six-by-six-win.pc-record.json").Final, ReplayGolden("six-by-six-rescue.pc-record.json").Final);
+            ExactKey won = StateAfter(BriefsWinningLine).Exact;
+
+            Assert.Equal(won, ReplayGolden("six-by-six-win.pc-record.json").Final);
+            Assert.Equal(won, ReplayGolden("six-by-six-rescue.pc-record.json").Final);
         }
 
         [Fact]
@@ -284,6 +303,19 @@ namespace PuzzleCore.Tests.Jam
         }
 
         private static JamRules Rules() => new(Load(SixBySix()));
+
+        /// <summary>The state the rules reach on the 6×6 board after these exits, applied directly rather than replayed.</summary>
+        private static LotState StateAfter(int[] pieces)
+        {
+            JamRules rules = Rules();
+            LotState state = rules.Start;
+            foreach (int piece in pieces)
+            {
+                state = Assert.IsType<MoveResult<LotState, ExitRejection>.Applied>(rules.TryApply(state, new Exit(new PieceId((byte)piece)))).Next;
+            }
+
+            return state;
+        }
 
         private static ReplayReport ReplayGolden(string file)
         {
