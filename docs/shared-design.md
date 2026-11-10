@@ -169,9 +169,19 @@ public static class FailAnalysis   // generic over <TState, TMove, TRejection>; 
 {
     public static NearMiss NearMissOf(Attempt<…> attempt, IPositionSolver<…> solver, NodeBudget budget);
     public static RewindReach RewindReachOf(Attempt<…> attempt, IPositionSolver<…> solver, NodeBudget budget);
+    public static FailCause CauseOf(Attempt<…> attempt, IPositionSolver<…> solver, IHiddenMoveCheck<…> hiddenCheck,
+                                    NodeBudget budgetPerEntry);
 }   // NearMissOf solves PeekSpare(). RewindReachOf solves PeekRewind(RewindLimit) once, because winning rewinds are
-    // upward-closed. The caller passes the budget (no default until bench).
-public enum FailCause { Capacity, Deduction, Unknown }           // P2, not in code yet; logs and debug lines only, see the notes
+    // upward-closed. CauseOf binary-searches the line for its last winnable entry (see the notes). The caller passes
+    // the budget (no default until bench).
+public abstract record FailCause { private FailCause() { }         // logs and debug lines only, see the notes
+    public sealed record Capacity(MoveCount LosingMoveBack) : FailCause;    // LosingMoveBack: 1 = the last move
+    public sealed record Deduction(MoveCount LosingMoveBack) : FailCause;
+    public sealed record Unknown(NodeCount NodesUsed) : FailCause; }       // a solve hit its budget: no losing move
+public interface IHiddenMoveCheck<TState, TMove>   // each game's: did the move touch a cell hidden when it was played?
+{
+    bool TouchesHiddenCell(in TState before, TMove move, SeenSet seenBefore);   // seenBefore leaves out the move's own reveal
+}   // Jam: LotHiddenMoveCheck. Sort: its own, from its label in the notes
 
 public sealed class Attempt<TState, TMove, TRejection>   // one attempt; the client and the replay validator both drive it
 {
@@ -279,7 +289,7 @@ public enum InvalidReason { IllegalMove, SpareOutsideFail, SecondSpare, RewindOu
   - **In code:** Covered Lot's P3 switches `LotClues` to this ladder: covered levels are pinned first, then re-pinned once after a per-slot diff, with the user's approval (TC10). P3 also removes the third definition: the `DeductionRung` doc comment and the unused `ForUnknownCount` (Q5). Sort's grader follows this text; once P3 is on `master`, the code's ladder matches it.
 - **Fail offer (identical in both games; confirmed, Q44):** every Campaign fail shows the offer screen until 4 have been shown in the game session (each one counts), then a free retry only; a concede never shows it. Each game's onboarding may hold the offer back on its first levels (Covered Lot: P10 sets the level where it first appears). Copy: "This offer only appears when one more vial (bay) can still win" and "A rewind of up to 5 moves can still win", never which length. Rewind is sold only there, and only when it can still win: no paid rewind on either HUD, no free undo. The rewarded ad grants +1 spare on `Yes`, otherwise a free rewind. A game session ends after 30 minutes in the background (§7).
 - **Fail cause for analytics** (`FailCause`, in PuzzleCore next to `FailAnalysis`; built in Covered Lot's P2; Q2, Q20, Q23-Q26, TC1, TC5, TC9): a cause is given for every fail, and only for fails: never for a concede, a retry or a quit (Q23, Q24). The losing move is the move that left the last winnable position.
-  - **The scan:** it goes back from the fail to the first winnable position, with one budgeted solve per position, using each game's position solver. A binary search is allowed, because a lost line never becomes winnable again. It never scans behind the spare. The caller passes a node budget for each position, with no default until the bench; the first overrun gives `Unknown` (TC5, TC9).
+  - **The scan:** it goes back from the fail to the first winnable position, with one budgeted solve per position, using each game's position solver. A binary search is allowed, because a lost line never becomes winnable again; `FailAnalysis.CauseOf` uses one. It never scans behind the spare: its floor is the spare's entry once the spare is taken, otherwise the start, and it takes the floor as winnable without a solve, because the spare is sold only on a near miss of `Yes` and a shipped level's start is certified winnable. The caller passes a node budget for each position, with no default until the bench; the first overrun gives `Unknown` (TC5, TC9).
   - **Deduction:** the losing move involved a hidden cell, judged with the attempt's `SeenSet` from just before that move, because the losing move reveals its own cell (TC5). Jam: the losing move sent out a vehicle that started covered and was not in that `SeenSet` (Q2, Q20, Q25); the label looks only at the losing move's own vehicle. Sort: the losing move poured from or into a vial that held a layer that started hidden and was not in that `SeenSet` (Q20). This Sort label is a *proposal*: the Sealed Vials session settles it in its own grilling (Q39).
   - **Capacity:** every other losing move, including (Jam) every open vehicle.
   - **Unknown:** a solve hit its budget.
@@ -561,7 +571,7 @@ Covered Lot and Sealed Vials are built in parallel, each by its own Claude Code 
 | Shared piece | Delivered by | In | Until then, the other session may assume |
 |---|---|---|---|
 | The rewind fence for Covered Lot (`JamRules.RewindFence` = `AtReveal`) | Covered Lot session | P1 (delivered) | `Attempt` already applies `AtReveal` for a game that names it. Sort names it, and adds `LayerRevealed` to the reveals `Attempt` sees, with its events |
-| `FailCause`, next to `FailAnalysis`, and `losing_move_back` in `fail_detail` | Covered Lot session | P2 | No cause exists in code; §2's definition is the target. Each game supplies its own position solver and hidden check (TC1) |
+| `FailCause`, next to `FailAnalysis`, and `losing_move_back` in `fail_detail` | Covered Lot session | P2 (delivered) | No cause exists in code; §2's definition is the target. Each game supplies its own position solver and hidden check (TC1) |
 | The deduction ladder in code: `LotClues` switched; `ForUnknownCount` and the third definition removed | Covered Lot session | P3 | The ladder text in §2 is the target; the code still grades with the old mapping. Until then, a Sort grader follows the §2 text, not the code's old mapping. The Covered Lot session tells the Sealed Vials session before merging the removal |
 | Grades: `PlanGrade`, `LevelGrade`, `LevelKind`, the presentation file, level ids `{packId}-{slot:0000}` | Covered Lot session | P4 | Only `DeductionGrade` and `DeductionRung` exist |
 | `PuzzleCore.Bot`, `IBotProfile` and `sim` | Covered Lot session | P5 | No bot code exists. Sort's profiles and bots are the Sealed Vials session's, added to the project additively |

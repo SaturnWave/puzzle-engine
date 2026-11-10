@@ -413,22 +413,6 @@ namespace PuzzleCore.Tests.Jam
             public int FencedAboveZero { get; set; }
         }
 
-        /// <summary>A position solver that records every state it is asked to solve, then solves it for real.</summary>
-        private sealed class RecordingSolver : IPositionSolver<LotState, Exit>
-        {
-            private readonly LotPositionSolver _inner;
-
-            public RecordingSolver(LotLevel level) => _inner = new LotPositionSolver(level);
-
-            public List<LotState> Asked { get; } = new List<LotState>();
-
-            public SolveResult<Exit> SolveFrom(in LotState state, NodeBudget budget)
-            {
-                Asked.Add(state);
-                return _inner.SolveFrom(state, budget);
-            }
-        }
-
         /// <summary>The Jam rules with no room for a spare: the packing-limit case that no valid level reaches.</summary>
         private sealed class NoRoomJamRules : IPuzzleRules<LotState, Exit, ExitRejection>
         {

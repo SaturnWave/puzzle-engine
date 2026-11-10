@@ -87,6 +87,10 @@ namespace PuzzleCore.Play
         // a hidden cell; 0 (the start) while there is none. RewindLimit never reaches behind it.
         private int _fenceIndex;
 
+        // _steps[k - 1] is the move that produced _line[k], with the SeenSet just before it was played.
+        // The fail cause reads it: a losing move reveals its own cell, so it is judged by what was seen before.
+        private readonly List<LineStep> _steps = new List<LineStep>();
+
         public Attempt(IPuzzleRules<TState, TMove, TRejection> rules, TState start, PlayMode mode)
         {
             _rules = rules;
@@ -133,6 +137,7 @@ namespace PuzzleCore.Play
             switch (_rules.TryApply(Current, move))
             {
                 case MoveResult<TState, TRejection>.Applied applied:
+                    _steps.Add(new LineStep(move, Seen));
                     _line.Add(applied.Next);
                     Observe(applied.Events);
                     return new StepResult<TRejection>.Done(applied.Events);
@@ -196,6 +201,7 @@ namespace PuzzleCore.Play
 
             int target = _line.Count - 1 - moves.Value;
             _line.RemoveRange(target + 1, _line.Count - target - 1);
+            _steps.RemoveRange(target, _steps.Count - target);
             if (SpareUsed && target < _spareAtIndex)
             {
                 _spareAtIndex = target;
@@ -228,6 +234,22 @@ namespace PuzzleCore.Play
 
             return Option.Some(restored);
         }
+
+        /// <summary>
+        /// The first line entry the fail cause may scan: the spare's entry once the spare is taken, since
+        /// the scan never goes behind the spare, otherwise the start. The value counts moves from the start.
+        /// </summary>
+        internal MoveCount FirstScannableEntry => new MoveCount(SpareUsed ? _spareAtIndex : 0);
+
+        /// <summary>
+        /// The line entry after <paramref name="moves"/> moves (0 is the start), spare included from the
+        /// spare's entry on. Unlike <see cref="PeekRewind"/> it reads past the rewind limit and the fence:
+        /// the fail cause scans back from the fail to the last winnable entry.
+        /// </summary>
+        internal TState EntryAfter(MoveCount moves) => _line[moves.Value];
+
+        /// <summary>The move that produced the entry after <paramref name="moves"/> moves (1 or more), with the SeenSet just before it.</summary>
+        internal LineStep StepInto(MoveCount moves) => _steps[moves.Value - 1];
 
         /// <summary>
         /// The state <see cref="TakeSpare"/> would give, without changing the attempt; None when the
@@ -298,5 +320,19 @@ namespace PuzzleCore.Play
         private static StepResult<TRejection> Refuse(InvalidReason reason) => new StepResult<TRejection>.Refused(reason);
 
         private static StepResult<TRejection> Done(PuzzleEvent single) => new StepResult<TRejection>.Done(ReadOnlyArray.Of(single));
+
+        /// <summary>One move on the current line, with the SeenSet just before it was played.</summary>
+        internal readonly struct LineStep
+        {
+            public LineStep(TMove move, SeenSet seenBefore)
+            {
+                Move = move;
+                SeenBefore = seenBefore;
+            }
+
+            public TMove Move { get; }
+
+            public SeenSet SeenBefore { get; }
+        }
     }
 }
