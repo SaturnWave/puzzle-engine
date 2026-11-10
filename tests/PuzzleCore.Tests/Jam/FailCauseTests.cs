@@ -87,6 +87,48 @@ namespace PuzzleCore.Tests.Jam
         }
 
         [Fact]
+        public void After_a_rewind_behind_the_spare_the_scan_starts_at_the_rewinds_target()
+        {
+            LotLevel level = Load(FreeCars(4, Blue, Red, Yellow, Blue, Red, Yellow, Blue, Red, Yellow));
+            Attempt<LotState, Exit, ExitRejection> attempt = Play(new JamRules(level), level, 0, 1, 2, 4);
+            Assert.IsType<StepResult<ExitRejection>.Done>(attempt.TakeSpare()); // the spare's entry is four moves in
+            PlayOn(attempt, 5); // five cars in five bays: full again
+            Assert.IsType<StepResult<ExitRejection>.Done>(attempt.Rewind(new MoveCount(5))); // back to the start, which gets the spare
+            PlayOn(attempt, 0, 1, 3, 4, 2); // B R B R Y: the five bays fill on the last move
+            var solver = new RecordingSolver(level);
+
+            Assert.Equal(new FailCause.Capacity(new MoveCount(1)), FailAnalysis.CauseOf(attempt, solver, new LotHiddenMoveCheck(level), Generous));
+            Assert.Contains(solver.Asked, state => System.Numerics.BitOperations.PopCount(state.Exited) < 4); // below the old spare entry
+        }
+
+        [Fact]
+        public void The_check_gets_the_losing_move_with_the_entry_and_the_seen_set_from_before_it()
+        {
+            // Piece 0's lift comes before the losing move and counts; piece 2's own lift does not.
+            LotLevel level = FreeCarsWithCoversOn(0, 2);
+            Attempt<LotState, Exit, ExitRejection> attempt = Play(new JamRules(level), level, 0, 1, 2, 4);
+            var check = new RecordingCheck();
+
+            FailAnalysis.CauseOf(attempt, new LotPositionSolver(level), check, Generous);
+
+            CheckCall call = Assert.Single(check.Calls);
+            Assert.Equal(Play(new JamRules(level), level, 0, 1).Current, call.Before);
+            Assert.Equal(new Exit(new PieceId(2)), call.Move);
+            Assert.Equal(default(SeenSet).With(new HiddenCell(0)), call.SeenBefore);
+        }
+
+        [Fact]
+        public void A_concede_after_a_fail_keeps_that_fails_cause()
+        {
+            LotLevel level = FreeCarsWithCoversOn(2);
+            Attempt<LotState, Exit, ExitRejection> attempt = Play(new JamRules(level), level, 0, 1, 2, 4);
+            FailCause atTheFail = CauseOf(attempt, level, Generous);
+            Assert.IsType<StepResult<ExitRejection>.Done>(attempt.Concede());
+
+            Assert.Equal(atTheFail, CauseOf(attempt, level, Generous));
+        }
+
+        [Fact]
         public void An_overrun_gives_unknown_which_has_no_losing_move()
         {
             // The losing move is two back, so the scan must solve at least one entry; one node is never enough.
@@ -155,7 +197,8 @@ namespace PuzzleCore.Tests.Jam
             Assert.True(seen.Capacity > 0, "The property never met a capacity fail.");
             Assert.True(seen.Deduction > 0, "The property never met a deduction fail.");
             Assert.True(seen.AfterSpare > 0, "The property never met a second fail after the spare.");
-            Assert.True(seen.AfterRewind > 0, "The property never met a second fail after a rewind.");
+            Assert.True(seen.AfterRewind > 0, "The property never met a fail after a rewind.");
+            Assert.True(seen.AfterARewindBehindTheSpare > 0, "The property never met a fail after a rewind behind the spare.");
             Assert.True(seen.WithInsight > 0, "The property never met a fail after an Insight.");
         }
 
@@ -176,26 +219,37 @@ namespace PuzzleCore.Tests.Jam
             {
                 Assert.IsType<StepResult<ExitRejection>.Done>(attempt.TakeSpare());
                 line.SpareTaken(attempt.Current);
-                if (PlaysToAFail(attempt, rules, random, line, -1))
+                if (!PlaysToAFail(attempt, rules, random, line, -1))
                 {
-                    CheckCause(level, attempt, line, seen);
-                    seen.AfterSpare++;
+                    return;
                 }
 
-                return;
+                CheckCause(level, attempt, line, seen);
+                seen.AfterSpare++;
             }
 
             if (FailAnalysis.RewindReachOf(attempt, solver, Generous) == RewindReach.Winnable)
             {
-                MoveCount back = attempt.RewindLimit;
-                Assert.IsType<StepResult<ExitRejection>.Done>(attempt.Rewind(back));
-                line.Rewound(back.Value);
-                if (PlaysToAFail(attempt, rules, random, line, -1))
-                {
-                    CheckCause(level, attempt, line, seen);
-                    seen.AfterRewind++;
-                }
+                RewindAndCheckTheNextFail(level, attempt, rules, random, line, seen);
             }
+        }
+
+        /// <summary>Rewinds the longest allowed length, which may go behind the spare, and checks the next fail's cause.</summary>
+        private static void RewindAndCheckTheNextFail(
+            LotLevel level, Attempt<LotState, Exit, ExitRejection> attempt, JamRules rules, Pcg32 random, LineModel line, CasesSeen seen)
+        {
+            MoveCount back = attempt.RewindLimit;
+            bool isBehindTheSpare = line.Moves - back.Value < line.Floor;
+            Assert.IsType<StepResult<ExitRejection>.Done>(attempt.Rewind(back));
+            line.Rewound(back.Value, rules);
+            if (!PlaysToAFail(attempt, rules, random, line, -1))
+            {
+                return;
+            }
+
+            CheckCause(level, attempt, line, seen);
+            seen.AfterRewind++;
+            seen.AfterARewindBehindTheSpare += isBehindTheSpare ? 1 : 0;
         }
 
         /// <summary>Plays random legal moves until the attempt ends; uses one Insight when the line reaches that many moves.</summary>
@@ -322,6 +376,7 @@ namespace PuzzleCore.Tests.Jam
             private readonly List<Exit> _moves = new List<Exit>();
             private readonly List<HashSet<byte>> _seenBeforeMove = new List<HashSet<byte>>();
             private readonly HashSet<byte> _seen = new HashSet<byte>();
+            private bool _spareTaken;
 
             public LineModel(LotLevel level, LotState start)
             {
@@ -374,16 +429,40 @@ namespace PuzzleCore.Tests.Jam
             {
                 _entries[_entries.Count - 1] = spared;
                 Floor = Moves;
+                _spareTaken = true;
             }
 
-            /// <summary>Drops the last moves; only called without a spare, so no entry needs the spare added back.</summary>
-            public void Rewound(int back)
+            /// <summary>
+            /// Drops the last moves. A spare already taken stays: a rewind behind the spare's entry gives its
+            /// target the spare back, and the target becomes the floor.
+            /// </summary>
+            public void Rewound(int back, JamRules rules)
             {
                 _entries.RemoveRange(_entries.Count - back, back);
                 _moves.RemoveRange(_moves.Count - back, back);
                 _seenBeforeMove.RemoveRange(_seenBeforeMove.Count - back, back);
+                if (_spareTaken && Moves < Floor)
+                {
+                    Assert.True(rules.TryWithOneSpare(Last).TryGet(out LotState spared));
+                    _entries[Moves] = spared;
+                    Floor = Moves;
+                }
             }
         }
+
+        /// <summary>A hidden-move check that records what it is handed and answers that nothing was hidden.</summary>
+        private sealed class RecordingCheck : IHiddenMoveCheck<LotState, Exit>
+        {
+            public List<CheckCall> Calls { get; } = new List<CheckCall>();
+
+            public bool TouchesHiddenCell(in LotState before, Exit move, SeenSet seenBefore)
+            {
+                Calls.Add(new CheckCall(before, move, seenBefore));
+                return false;
+            }
+        }
+
+        private sealed record CheckCall(LotState Before, Exit Move, SeenSet SeenBefore);
 
         /// <summary>How often the property met each case, so it cannot pass without exercising them all.</summary>
         private sealed class CasesSeen
@@ -395,6 +474,8 @@ namespace PuzzleCore.Tests.Jam
             public int AfterSpare { get; set; }
 
             public int AfterRewind { get; set; }
+
+            public int AfterARewindBehindTheSpare { get; set; }
 
             public int WithInsight { get; set; }
         }

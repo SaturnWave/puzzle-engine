@@ -70,12 +70,15 @@ namespace PuzzleCore.Play
         /// <summary>
         /// Why a failed attempt was lost (shared-design.md §2, "Fail cause for analytics"). The losing move
         /// is the one that left the last winnable entry of the current line. Winnable entries come first on
-        /// the line, because from a winnable entry the line's own moves reach every earlier one again, so a
-        /// binary search finds the last one with one solve per entry it checks. It starts at the spare's
-        /// entry once the spare is taken, otherwise at the start, and takes that entry as winnable without
-        /// a solve: the spare is sold only on a near miss of Yes, and a shipped level's start is certified
-        /// winnable. The losing move is judged with the SeenSet from just before it, because it reveals its
-        /// own cell: Deduction when it touched a cell hidden then (the game's check), Capacity otherwise.
+        /// the line: from an earlier entry the line's own moves reach any later winnable one, so a lost entry
+        /// is never followed by a winnable one, and a binary search finds the last winnable entry with one
+        /// solve per entry it checks. It starts at the spare's entry once the spare is taken, otherwise at the
+        /// start, and takes that entry as winnable without a solve: the spare is sold only on a near miss of
+        /// Yes, and a shipped level's start is certified winnable. After a rewind behind the spare, the
+        /// spare's entry is the rewind's target, which gets the spare back; from it the line's own moves led
+        /// to the entry where the spare was sold, so it is winnable too. The losing move is judged with the
+        /// SeenSet from just before it, because it reveals its own cell: Deduction when it touched a cell
+        /// hidden then (the game's check), Capacity otherwise.
         /// The first solve that runs out of <paramref name="budgetPerEntry"/> gives Unknown. Call it on
         /// Failed only: any other outcome throws InvalidOperationException.
         /// </summary>

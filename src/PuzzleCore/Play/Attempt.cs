@@ -237,7 +237,8 @@ namespace PuzzleCore.Play
 
         /// <summary>
         /// The first line entry the fail cause may scan: the spare's entry once the spare is taken, since
-        /// the scan never goes behind the spare, otherwise the start. The value counts moves from the start.
+        /// the scan never goes behind the spare, otherwise the start. A rewind behind the spare moves the
+        /// spare's entry to the rewind's target. The value counts moves from the start.
         /// </summary>
         internal MoveCount FirstScannableEntry => new MoveCount(SpareUsed ? _spareAtIndex : 0);
 
