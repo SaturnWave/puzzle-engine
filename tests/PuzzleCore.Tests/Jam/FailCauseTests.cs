@@ -90,10 +90,14 @@ namespace PuzzleCore.Tests.Jam
         public void An_overrun_gives_unknown_which_has_no_losing_move()
         {
             // The losing move is two back, so the scan must solve at least one entry; one node is never enough.
+            // The search checks the middle entry first, two moves in, and reports that solve's node count.
             LotLevel level = Load(FreeCars(4, Blue, Red, Yellow, Blue, Red, Yellow, Blue, Red, Yellow));
             Attempt<LotState, Exit, ExitRejection> attempt = Play(new JamRules(level), level, 0, 1, 2, 4);
+            var tiny = new NodeBudget(1);
+            LotState middle = Play(new JamRules(level), level, 0, 1).Current;
+            var overrun = Assert.IsType<SolveResult<Exit>.BudgetExceeded>(new LotPositionSolver(level).SolveFrom(middle, tiny));
 
-            Assert.IsType<FailCause.Unknown>(CauseOf(attempt, level, new NodeBudget(1)));
+            Assert.Equal(new FailCause.Unknown(overrun.NodesUsed), CauseOf(attempt, level, tiny));
         }
 
         [Fact]
