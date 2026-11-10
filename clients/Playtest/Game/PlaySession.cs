@@ -56,7 +56,7 @@ namespace CoveredLot.Playtest.Game
 
         public Option<Blocker> BumpedBy { get; private set; }
 
-        /// <summary>Covers lifted in this attempt (they stay lifted after a rewind).</summary>
+        /// <summary>The covers seen in this attempt: lifted, or shown by Insight. The set only grows within the attempt.</summary>
         public SeenSet Seen => _attempt.Seen;
 
         public FailOffers Offers { get; private set; } = new FailOffers(false, false);

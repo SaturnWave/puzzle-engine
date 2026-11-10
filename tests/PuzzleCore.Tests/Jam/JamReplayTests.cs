@@ -41,7 +41,7 @@ namespace PuzzleCore.Tests.Jam
         }
 
         [Fact]
-        public void Both_golden_records_end_in_the_same_won_state()
+        public void The_win_and_rescue_records_end_in_the_same_won_state()
         {
             Assert.Equal(ReplayGolden("six-by-six-win.pc-record.json").Final, ReplayGolden("six-by-six-rescue.pc-record.json").Final);
         }
@@ -201,13 +201,35 @@ namespace PuzzleCore.Tests.Jam
         [Fact]
         public void Rewind_restores_the_exact_earlier_state_and_the_seen_set_only_grows()
         {
-            // Property over seeded random legal lines on the 6×6 board, each rewound by an allowed length.
-            int rewinds = 0;
+            // Covered Lot's fence keeps every rewind at or after the last reveal, so no lifted cover comes back.
+            LotLevel level = Load(SixBySix());
+            RewindCases cases = RewindRandomLines(level, new JamRules(level));
+
+            Assert.True(cases.Rewinds > 0, "The property never rewound.");
+            Assert.Equal(0, cases.CoversBroughtBack);
+        }
+
+        [Fact]
+        public void Without_a_fence_a_rewind_that_brings_back_a_lifted_cover_keeps_its_colour_seen()
+        {
+            // The shared contract keeps RewindFence.None, where a rewind may undo a reveal; the SeenSet must still only grow.
+            LotLevel level = Load(SixBySix());
+            RewindCases cases = RewindRandomLines(level, new UnfencedJamRules(level));
+
+            Assert.True(cases.CoversBroughtBack > 0, "No rewind brought back a lifted cover, so that case was never checked.");
+        }
+
+        /// <summary>
+        /// Plays seeded random legal lines on the level; after each fail, rewinds by a random allowed length and
+        /// checks that the exact earlier state returns and that no seen cell is lost.
+        /// </summary>
+        private static RewindCases RewindRandomLines(LotLevel level, IPuzzleRules<LotState, Exit, ExitRejection> rules)
+        {
+            var cases = new RewindCases();
             for (int run = 0; run < 200; run++)
             {
                 Pcg32 random = Pcg32.Seeded((ulong)run, 7UL);
-                JamRules rules = Rules();
-                var attempt = new Attempt<LotState, Exit, ExitRejection>(rules, rules.Start, PlayMode.Campaign);
+                var attempt = new Attempt<LotState, Exit, ExitRejection>(rules, LotState.Start(level), PlayMode.Campaign);
                 var keys = new List<ExactKey> { attempt.Current.Exact };
                 while (attempt.Outcome is Outcome.InPlay)
                 {
@@ -228,16 +250,31 @@ namespace PuzzleCore.Tests.Jam
                     continue;
                 }
 
+                LotState failed = attempt.Current;
                 ulong seenBefore = attempt.Seen.Mask;
                 int back = 1 + random.NextIndex(limit);
                 Assert.IsType<StepResult<ExitRejection>.Done>(attempt.Rewind(new MoveCount(back)));
-                rewinds++;
+                cases.Rewinds++;
+                cases.CoversBroughtBack += CoveredCarsBackInTheLot(level, failed, attempt.Current);
 
                 Assert.Equal(keys[keys.Count - 1 - back], attempt.Current.Exact);
                 Assert.Equal(seenBefore, attempt.Seen.Mask & seenBefore);
             }
 
-            Assert.True(rewinds > 0, "The property never rewound.");
+            return cases;
+        }
+
+        /// <summary>Covered cars that had left the lot in <paramref name="before"/> but are in it again in <paramref name="after"/>.</summary>
+        private static int CoveredCarsBackInTheLot(LotLevel level, LotState before, LotState after)
+        {
+            int back = 0;
+            foreach (Vehicle vehicle in level.Vehicles)
+            {
+                bool isBack = vehicle.StartsCovered && before.HasExited(vehicle.Id) && !after.HasExited(vehicle.Id);
+                back += isBack ? 1 : 0;
+            }
+
+            return back;
         }
 
         private static JamRules Rules() => new(Load(SixBySix()));
@@ -271,5 +308,14 @@ namespace PuzzleCore.Tests.Jam
         private static RecordAction<Exit> Spare() => new RecordAction<Exit>.TakeSpare(Ms());
 
         private static RecordAction<Exit> Insight(int cell) => new RecordAction<Exit>.UseInsight(new HiddenCell((byte)cell), Ms());
+
+        /// <summary>How often the rewind property met each case, so it cannot pass without exercising them.</summary>
+        private sealed class RewindCases
+        {
+            public int Rewinds { get; set; }
+
+            /// <summary>Rewinds that put a car whose cover had lifted back into the lot (possible only without a fence).</summary>
+            public int CoversBroughtBack { get; set; }
+        }
     }
 }

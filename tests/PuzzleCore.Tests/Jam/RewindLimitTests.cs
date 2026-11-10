@@ -148,6 +148,19 @@ namespace PuzzleCore.Tests.Jam
         }
 
         [Fact]
+        public void Under_the_reveal_fence_a_rewind_back_past_an_insight_keeps_its_cell_seen()
+        {
+            LotLevel level = FreeCarsWithCoversOn(8);
+            Attempt<LotState, Exit, ExitRejection> attempt = Begin(new JamRules(level), level);
+            Play(attempt, 0, 1);
+            Assert.IsType<StepResult<ExitRejection>.Done>(attempt.UseInsight(new HiddenCell(8)));
+            Play(attempt, 2, 4); // the bays fill and no cover lifts, so the fence still sits at the start
+
+            Assert.IsType<StepResult<ExitRejection>.Done>(attempt.Rewind(new MoveCount(3))); // back to before the insight
+            Assert.True(attempt.Seen.Contains(new HiddenCell(8)));
+        }
+
+        [Fact]
         public void Under_the_reveal_fence_a_move_that_lifts_a_cover_already_shown_by_insight_still_moves_the_fence()
         {
             LotLevel level = FreeCarsWithCoversOn(1);
