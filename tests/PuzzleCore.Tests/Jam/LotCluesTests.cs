@@ -53,6 +53,100 @@ namespace PuzzleCore.Tests.Jam
         }
 
         [Fact]
+        public void A_false_ahead_link_between_covers_gives_no_grade()
+        {
+            // Covers 3 (B), 6 (R), 7 (R) with "7 differs from ahead", although 6 and 7 are both red. Every cover
+            // gets fixed (3 by its Not, 6 and 7 by the ledger), and only the check of the finished link catches it.
+            LotDefinition board = SixBySix() with
+            {
+                Vehicles = Covered(SixBySix(), 3, 6, 7),
+                Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Not(new PieceId(3), Red), new LotClue.Ahead(new PieceId(7), AheadRelation.Differs)),
+            };
+            var clues = new LotClues(Load(board));
+
+            Assert.IsType<Uniqueness.Contradiction>(UniquenessCheck.Run(clues, Budget));
+            Assert.IsType<DeductionGrade.NeedsGuess>(clues.Grade(Budget));
+        }
+
+        [Fact]
+        public void A_false_count_over_two_covers_gives_no_grade()
+        {
+            // Covers 5 (Y), 7 (R), 8 (Y) with 7 "touches 0 Y". The count fixes 5 red, the ledger then leaves 7 and 8
+            // yellow, and the finished count breaks.
+            LotDefinition board = SixBySix() with
+            {
+                Vehicles = Covered(SixBySix(), 5, 7, 8),
+                Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Touch(new PieceId(7), Yellow, 0)),
+            };
+            var clues = new LotClues(Load(board));
+
+            Assert.IsType<Uniqueness.Contradiction>(UniquenessCheck.Run(clues, Budget));
+            Assert.IsType<DeductionGrade.NeedsGuess>(clues.Grade(Budget));
+        }
+
+        [Fact]
+        public void A_false_tag_about_open_vehicles_only_gives_no_grade()
+        {
+            // The brief's example plus 7 "touches 1 Y", while both of 7's neighbours (5 and 8) are open yellows. The
+            // tag speaks about no cover, so no step reads it; it must still stop the grade.
+            LotDefinition board = SixBySix() with
+            {
+                Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Not(new PieceId(3), Red), new LotClue.Touch(new PieceId(7), Yellow, 1)),
+            };
+            var clues = new LotClues(Load(board));
+
+            Assert.IsType<Uniqueness.Contradiction>(UniquenessCheck.Run(clues, Budget));
+            Assert.IsType<DeductionGrade.NeedsGuess>(clues.Grade(Budget));
+        }
+
+        [Fact]
+        public void A_true_tag_about_open_vehicles_only_changes_nothing()
+        {
+            // The brief's example plus 7 "touches 2 Y", which its open neighbours 5 and 8 already make true.
+            LotDefinition board = SixBySix() with
+            {
+                Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Not(new PieceId(3), Red), new LotClue.Touch(new PieceId(7), Yellow, 2)),
+            };
+            var clues = new LotClues(Load(board));
+
+            var graded = Assert.IsType<DeductionGrade.Graded>(clues.Grade(Budget));
+
+            Assert.Equal(DeductionRung.D1, graded.Rung);
+            Assert.Equal(new StepCount(2), graded.Steps);
+        }
+
+        [Fact]
+        public void A_repeated_tag_is_still_one_tag()
+        {
+            // "3 not R" twice: each copy fixes 3 alone, so the step stays D1 and never counts as two tags together.
+            LotDefinition board = SixBySix() with
+            {
+                Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Not(new PieceId(3), Red), new LotClue.Not(new PieceId(3), Red)),
+            };
+
+            var graded = Assert.IsType<DeductionGrade.Graded>(new LotClues(Load(board)).Grade(Budget));
+
+            Assert.Equal(DeductionRung.D1, graded.Rung);
+            Assert.Equal(new StepCount(2), graded.Steps);
+        }
+
+        [Fact]
+        public void The_highest_colour_id_grades_like_any_other()
+        {
+            // The brief's example with every blue recoloured to the last colour id: still D1 in two steps.
+            var highest = new ColourId(ColourId.MaxValue);
+            LotDefinition board = SixBySix() with { Vehicles = Recoloured(SixBySix(), (0, highest), (3, highest), (4, highest)) };
+            var clues = new LotClues(Load(board));
+
+            var graded = Assert.IsType<DeductionGrade.Graded>(clues.Grade(Budget));
+            var unique = Assert.IsType<Uniqueness.Unique>(UniquenessCheck.Run(clues, Budget));
+
+            Assert.Equal(DeductionRung.D1, graded.Rung);
+            Assert.Equal(new StepCount(2), graded.Steps);
+            Assert.Equal(Option.Some(highest), unique.Answer.ColourOf(new HiddenCell(3)));
+        }
+
+        [Fact]
         public void A_false_but_consistent_tag_gives_a_unique_answer_that_differs_from_the_truth()
         {
             // Why the certificate also compares the answer with the true colours.
@@ -127,6 +221,28 @@ namespace PuzzleCore.Tests.Jam
         }
 
         [Fact]
+        public void Tags_of_two_kinds_about_one_cover_together_are_a_d2_step()
+        {
+            // Covers 2 (Y), 3 (B) and 7 (R). 3 "touches 1 R" sits on 3, but with its open neighbour 1 (R) counted out
+            // it speaks about 2 alone: 2 is not red. With "2 not B" that leaves 2 yellow only together (D2). Then
+            // "3 not R" leaves 3 blue (D1) and the ledger leaves 7 red (D1).
+            LotDefinition board = SixBySix() with
+            {
+                Vehicles = Covered(SixBySix(), 2, 3, 7),
+                Clues = ReadOnlyArray.Of<LotClue>(
+                    new LotClue.Touch(new PieceId(3), Red, 1), new LotClue.Not(new PieceId(2), Blue), new LotClue.Not(new PieceId(3), Red)),
+            };
+            var clues = new LotClues(Load(board));
+
+            var graded = Assert.IsType<DeductionGrade.Graded>(clues.Grade(Budget));
+            var unique = Assert.IsType<Uniqueness.Unique>(UniquenessCheck.Run(clues, Budget));
+
+            Assert.Equal(DeductionRung.D2, graded.Rung);
+            Assert.Equal(new StepCount(3), graded.Steps);
+            Assert.Equal(Option.Some(Yellow), unique.Answer.ColourOf(new HiddenCell(2)));
+        }
+
+        [Fact]
         public void An_ahead_tag_against_an_open_vehicle_is_a_d1_step()
         {
             // ?< (7) faces west and the first vehicle on its path is the open R^ (6). "7 same as ahead" leaves 7 red
@@ -138,6 +254,26 @@ namespace PuzzleCore.Tests.Jam
 
             Assert.Equal(DeductionRung.D1, graded.Rung);
             Assert.Equal(new StepCount(2), graded.Steps);
+        }
+
+        [Fact]
+        public void An_ahead_differs_tag_against_an_open_vehicle_is_a_d1_step()
+        {
+            // Covers 2 (Y) and 4 (B): Y> (2) faces east and the first vehicle on its path is the open ?v (3), blue.
+            // "2 differs from ahead" takes blue off 2, which leaves yellow (D1); the ledger leaves 4 blue (D1).
+            LotDefinition board = SixBySix() with
+            {
+                Vehicles = Covered(SixBySix(), 2, 4),
+                Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Ahead(new PieceId(2), AheadRelation.Differs)),
+            };
+            var clues = new LotClues(Load(board));
+
+            var graded = Assert.IsType<DeductionGrade.Graded>(clues.Grade(Budget));
+            var unique = Assert.IsType<Uniqueness.Unique>(UniquenessCheck.Run(clues, Budget));
+
+            Assert.Equal(DeductionRung.D1, graded.Rung);
+            Assert.Equal(new StepCount(2), graded.Steps);
+            Assert.Equal(Option.Some(Yellow), unique.Answer.ColourOf(new HiddenCell(2)));
         }
 
         [Fact]
@@ -241,9 +377,10 @@ namespace PuzzleCore.Tests.Jam
         }
 
         [Fact]
-        public void A_count_cut_off_by_the_budget_fixes_nothing_and_reports_the_budget()
+        public void A_count_cut_off_by_the_budget_reports_the_budget()
         {
-            // The two-cover Touch count needs seven search nodes; three cut it off part way.
+            // The two-cover Touch count needs seven search nodes; three cut it off part way, and the grade reports
+            // the overrun instead of a guess.
             var clues = new LotClues(Load(TouchCountOverTwoCovers()));
 
             Assert.IsType<DeductionGrade.BudgetExceeded>(clues.Grade(new NodeBudget(3)));

@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 
 namespace PuzzleCore.Search
@@ -97,7 +96,10 @@ namespace PuzzleCore.Search
         {
         }
 
-        /// <summary>Every hidden cell is forced by reasoning; Rung is the hardest step needed, Steps the passes that made progress.</summary>
+        /// <summary>
+        /// Every hidden cell is forced by reasoning; Rung is the hardest step needed, Steps the deduction steps.
+        /// Each game's grader defines a step (Jam: one cover fixed, so Steps is the cover count).
+        /// </summary>
         public sealed record Graded(DeductionRung Rung, StepCount Steps) : DeductionGrade;
 
         /// <summary>Reasoning stalls: a what-if case split would be needed. Rejected in v1.</summary>

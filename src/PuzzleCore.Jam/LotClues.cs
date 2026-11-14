@@ -23,6 +23,9 @@ namespace PuzzleCore.Jam
     {
         private readonly int[] _ledger = new int[ColourId.MaxValue + 1];
         private readonly List<ColourId> _ledgerColours = new List<ColourId>();
+
+        // Every tag and the ledger, for the consistency checks. A tag over no covered vehicle (a Touch with no
+        // covered neighbour) is only in here: no step reads it, and only the contradiction check can break it.
         private readonly List<Rule> _rules = new List<Rule>();
 
         // Tags about one cover alone, each with the colours it leaves that cover: the D1 and D2 steps read them.
@@ -248,17 +251,16 @@ namespace PuzzleCore.Jam
                     continue;
                 }
 
-                if (IsSingle(coloursLeft))
+                if (OnlyColour(coloursLeft).TryGet(out ColourId last))
                 {
-                    return Option.Some(new Fix(position, coloursLeft, DeductionRung.D1));
+                    return Option.Some(new Fix(position, last, DeductionRung.D1));
                 }
 
                 foreach (OwnTag tag in _ownTags)
                 {
-                    ushort leaves = (ushort)(tag.Allows & coloursLeft);
-                    if (tag.Position == position && IsSingle(leaves))
+                    if (tag.Position == position && OnlyColour((ushort)(tag.Allows & coloursLeft)).TryGet(out ColourId colour))
                     {
-                        return Option.Some(new Fix(position, leaves, DeductionRung.D1));
+                        return Option.Some(new Fix(position, colour, DeductionRung.D1));
                     }
                 }
             }
@@ -274,9 +276,9 @@ namespace PuzzleCore.Jam
         {
             for (int position = 0; position < domains.Length; position++)
             {
-                if (!fixedColours[position].HasValue && IsSingle(domains[position]))
+                if (!fixedColours[position].HasValue && OnlyColour(domains[position]).TryGet(out ColourId colour))
                 {
-                    return Option.Some(new Fix(position, domains[position], DeductionRung.D2));
+                    return Option.Some(new Fix(position, colour, DeductionRung.D2));
                 }
             }
 
@@ -316,7 +318,8 @@ namespace PuzzleCore.Jam
 
         /// <summary>
         /// The lowest unknown cover the rules leave one colour, over every assignment of their unknown covers
-        /// that satisfies them all. None once the node budget runs out: a cut-off count proves nothing.
+        /// that satisfies them all. None once the node budget runs out, because a cut-off count proves nothing;
+        /// the guard is defensive, since Grade reports the overrun before it applies any step.
         /// </summary>
         private static Option<Fix> FixedBy(Rule[] rules, ushort[] domains, NodeCounter counter)
         {
@@ -330,9 +333,9 @@ namespace PuzzleCore.Jam
 
             for (int index = 0; index < unknown.Count; index++)
             {
-                if (IsSingle(supported[index]))
+                if (OnlyColour(supported[index]).TryGet(out ColourId colour))
                 {
-                    return Option.Some(new Fix(unknown[index], supported[index], DeductionRung.D3));
+                    return Option.Some(new Fix(unknown[index], colour, DeductionRung.D3));
                 }
             }
 
@@ -443,6 +446,10 @@ namespace PuzzleCore.Jam
 
         private static bool IsSingle(ushort domain) => domain != 0 && (domain & (domain - 1)) == 0;
 
+        /// <summary>The one colour in the set, or none when it holds no colour or several.</summary>
+        private static Option<ColourId> OnlyColour(ushort colours) =>
+            IsSingle(colours) ? Option.Some(new ColourId(SingleColour(colours))) : Option.None<ColourId>();
+
         private static byte SingleColour(ushort domain)
         {
             byte colour = 0;
@@ -546,10 +553,10 @@ namespace PuzzleCore.Jam
         /// <summary>One step of the deduction: the cover it fixes, that cover's colour and the step's rung.</summary>
         private readonly struct Fix
         {
-            public Fix(int position, ushort colourBit, DeductionRung rung)
+            public Fix(int position, ColourId colour, DeductionRung rung)
             {
                 Position = position;
-                Colour = new ColourId(SingleColour(colourBit));
+                Colour = colour;
                 Rung = rung;
             }
 
