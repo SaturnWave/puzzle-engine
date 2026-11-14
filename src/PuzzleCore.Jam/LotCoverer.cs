@@ -75,10 +75,10 @@ namespace PuzzleCore.Jam
                 return Option.None<CoveredLot>();
             }
 
-            // D3 needs tags that link several covers, so a D3 slot tries the tags that involve another cover first
-            // (a Touch next to just one cover among them) and single-cover tags after. D1 and D2 come from tags
-            // about one cover alone, so their slots shuffle all tags together: linking tags first would only
-            // steer them to D3.
+            // D3 usually comes from tags that link several covers, so a D3 slot tries the tags that involve another
+            // cover first (a Touch next to just one cover among them) and single-cover tags after. D1 and D2 come
+            // from tags about one cover alone, so their slots shuffle all tags together: linking tags first would
+            // only steer them to D3.
             (List<LotClue> linking, List<LotClue> single) = TrueTags(plain, covered);
             List<LotClue> candidates = clustered
                 ? Shuffle(linking, clueStream).Concat(Shuffle(single, clueStream)).ToList()

@@ -19,10 +19,14 @@ namespace PuzzleCore.Jam
     /// unknown covers (Q41). Anything more is NeedsGuess.
     /// </para>
     /// <para>
-    /// A Touch that says the same of each of its covers (it touches none of the colour, or every covered
-    /// neighbour has it) counts over its covers while two or more are unknown (D3). Once its other covers are
-    /// fixed, it tells the last one the same whatever they turned out to be, so it is then a tag about that
-    /// cover alone, read at D1 or D2.
+    /// A Touch that says the same of each of its covers (none of its covered neighbours has the colour, or every
+    /// one has it) counts over its covers while two or more are unknown (D3). Once its other covers are fixed,
+    /// it tells the last one the same whatever they turned out to be, so it is then a tag about that cover
+    /// alone, read at D1 or D2.
+    /// </para>
+    /// <para>
+    /// Sets of colours are bit masks over the colour ids 1-15 (bit n is colour n): the grader's inner loops
+    /// intersect them on every step and every enumerated assignment.
     /// </para>
     /// </summary>
     public sealed class LotClues : IClueModel

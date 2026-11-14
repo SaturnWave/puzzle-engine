@@ -55,8 +55,8 @@ namespace PuzzleCore.Tests.Jam
         [Fact]
         public void A_false_ahead_link_between_covers_gives_no_grade()
         {
-            // Covers 3 (B), 6 (R), 7 (R) with "7 differs from ahead", although 6 and 7 are both red. Every cover
-            // gets fixed (3 by its Not, 6 and 7 by the ledger), and only the check of the finished link catches it.
+            // Covers 3 (B), 6 (R), 7 (R) with "7 differs from ahead", although 6 and 7 are both red. 3 is fixed by its
+            // Not; the ledger then leaves 6 and 7 only red, and only the check of the finished link catches it.
             LotDefinition board = SixBySix() with
             {
                 Vehicles = Covered(SixBySix(), 3, 6, 7),
@@ -71,12 +71,13 @@ namespace PuzzleCore.Tests.Jam
         [Fact]
         public void A_false_count_over_two_covers_gives_no_grade()
         {
-            // Covers 5 (Y), 7 (R), 8 (Y) with 7 "touches 0 Y". The count fixes 5 red, the ledger then leaves 7 and 8
-            // yellow, and the finished count breaks.
+            // Covers 5 (Y), 7 (R), 8 (Y) with "7 not Y" and 7 "touches 1 Y", although both its neighbours 5 and 8 are
+            // yellow. "7 not Y" leaves 7 red; the ledger then leaves 5 and 8 only yellow, and only the check of the
+            // finished count catches it.
             LotDefinition board = SixBySix() with
             {
                 Vehicles = Covered(SixBySix(), 5, 7, 8),
-                Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Touch(new PieceId(7), Yellow, 0)),
+                Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Not(new PieceId(7), Yellow), new LotClue.Touch(new PieceId(7), Yellow, 1)),
             };
             var clues = new LotClues(Load(board));
 
@@ -356,6 +357,97 @@ namespace PuzzleCore.Tests.Jam
         }
 
         [Fact]
+        public void A_touch_about_its_last_cover_reads_whichever_cover_is_left()
+        {
+            // The same Touch with "8 not R" instead: 8 is fixed first (D1), and the Touch then tells 5, its other
+            // cover, "not red": yellow (D1). The ledger leaves 7 red (D1).
+            LotDefinition board = SixBySix() with
+            {
+                Vehicles = Covered(SixBySix(), 5, 7, 8),
+                Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Not(new PieceId(8), Red), new LotClue.Touch(new PieceId(7), Red, 0)),
+            };
+
+            var graded = Assert.IsType<DeductionGrade.Graded>(new LotClues(Load(board)).Grade(Budget));
+
+            Assert.Equal(DeductionRung.D1, graded.Rung);
+            Assert.Equal(new StepCount(3), graded.Steps);
+        }
+
+        [Fact]
+        public void A_touch_that_says_every_cover_has_the_colour_is_about_the_last_cover_too()
+        {
+            // Covers 5 (Y), 7 (R), 8 (Y), tags "5 not R" and 7 "touches 2 Y": every covered neighbour of 7 is yellow.
+            // "5 not R" leaves 5 yellow (D1); the Touch then tells 8 "yellow" alone (D1); the ledger leaves 7 red (D1).
+            LotDefinition board = SixBySix() with
+            {
+                Vehicles = Covered(SixBySix(), 5, 7, 8),
+                Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Not(new PieceId(5), Red), new LotClue.Touch(new PieceId(7), Yellow, 2)),
+            };
+
+            var graded = Assert.IsType<DeductionGrade.Graded>(new LotClues(Load(board)).Grade(Budget));
+
+            Assert.Equal(DeductionRung.D1, graded.Rung);
+            Assert.Equal(new StepCount(3), graded.Steps);
+        }
+
+        [Fact]
+        public void A_touch_about_its_last_cover_with_another_tag_about_it_is_a_d2_step()
+        {
+            // The board recoloured (0 Y, 5 B: blue 3, 4, 5; yellow 0, 2, 8; red 1, 6, 7), covers 3 (B), 5 (B), 7 (R),
+            // 8 (Y), ledger B2 R1 Y1. "5 same as ahead" (the open blue 4) leaves 5 blue (D1). 7 "touches 0 R" then has
+            // one cover left, 8, and tells it "not red"; with "8 not B" that leaves 8 yellow only together (D2).
+            // "3 not R" leaves 3 blue (D1) and the ledger leaves 7 red (D1).
+            LotDefinition recoloured = SixBySix() with { Vehicles = Recoloured(SixBySix(), (0, Yellow), (5, Blue)) };
+            LotDefinition board = recoloured with
+            {
+                Vehicles = Covered(recoloured, 3, 5, 7, 8),
+                Clues = ReadOnlyArray.Of<LotClue>(
+                    new LotClue.Ahead(new PieceId(5), AheadRelation.Same),
+                    new LotClue.Touch(new PieceId(7), Red, 0),
+                    new LotClue.Not(new PieceId(8), Blue),
+                    new LotClue.Not(new PieceId(3), Red)),
+            };
+            var clues = new LotClues(Load(board));
+
+            var graded = Assert.IsType<DeductionGrade.Graded>(clues.Grade(Budget));
+            var unique = Assert.IsType<Uniqueness.Unique>(UniquenessCheck.Run(clues, Budget));
+
+            Assert.Equal(DeductionRung.D2, graded.Rung);
+            Assert.Equal(new StepCount(4), graded.Steps);
+            Assert.Equal(Option.Some(Yellow), unique.Answer.ColourOf(new HiddenCell(8)));
+        }
+
+        [Theory]
+        [InlineData(ColourId.MaxValue, (byte)1)]
+        [InlineData(ColourId.MinValue, (byte)3)]
+        public void A_touch_of_none_leaves_its_last_cover_the_lowest_or_highest_colour_id(byte last, byte touched)
+        {
+            // Covers 5, 7 and 8, with 2, 5 and 8 recoloured to `last` and 1, 6 and 7 to `touched` (three of each).
+            // "5 not touched" leaves 5 `last` (D1); 7 "touches 0 touched" then tells 8 "not touched", which leaves it
+            // `last` (D1); the ledger leaves 7 `touched` (D1).
+            var lastColour = new ColourId(last);
+            var touchedColour = new ColourId(touched);
+            LotDefinition recoloured = SixBySix() with
+            {
+                Vehicles = Recoloured(
+                    SixBySix(), (1, touchedColour), (2, lastColour), (5, lastColour), (6, touchedColour), (7, touchedColour), (8, lastColour)),
+            };
+            LotDefinition board = recoloured with
+            {
+                Vehicles = Covered(recoloured, 5, 7, 8),
+                Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Not(new PieceId(5), touchedColour), new LotClue.Touch(new PieceId(7), touchedColour, 0)),
+            };
+            var clues = new LotClues(Load(board));
+
+            var graded = Assert.IsType<DeductionGrade.Graded>(clues.Grade(Budget));
+            var unique = Assert.IsType<Uniqueness.Unique>(UniquenessCheck.Run(clues, Budget));
+
+            Assert.Equal(DeductionRung.D1, graded.Rung);
+            Assert.Equal(new StepCount(3), graded.Steps);
+            Assert.Equal(Option.Some(lastColour), unique.Answer.ColourOf(new HiddenCell(8)));
+        }
+
+        [Fact]
         public void A_count_that_works_through_a_cover_fixed_earlier_stays_a_d3_step()
         {
             // The recoloured board (5 R, 7 Y, 8 B), covers 5, 7 and 8. "5 not Y" and "5 not B" leave 5 red together
@@ -379,8 +471,30 @@ namespace PuzzleCore.Tests.Jam
         [Fact]
         public void Two_tags_over_several_covers_needed_together_are_a_d3_step()
         {
+            // Covers 3 (B), 5 (Y), 7 (R), 8 (Y), tags 7 "touches 0 R", 7 "touches 0 B" and "3 not R". No single tag and
+            // no tag with the ledger fixes a cover first; the two Touches together leave 5 yellow (D3). Then both have
+            // only 8 left, and together they leave it yellow (D2); "3 not R" leaves 3 blue (D1) and the ledger 7 red (D1).
+            LotDefinition board = SixBySix() with
+            {
+                Vehicles = Covered(SixBySix(), 3, 5, 7, 8),
+                Clues = ReadOnlyArray.Of<LotClue>(
+                    new LotClue.Touch(new PieceId(7), Red, 0), new LotClue.Touch(new PieceId(7), Blue, 0), new LotClue.Not(new PieceId(3), Red)),
+            };
+            var clues = new LotClues(Load(board));
+
+            var graded = Assert.IsType<DeductionGrade.Graded>(clues.Grade(Budget));
+            var unique = Assert.IsType<Uniqueness.Unique>(UniquenessCheck.Run(clues, Budget));
+
+            Assert.Equal(DeductionRung.D3, graded.Rung);
+            Assert.Equal(new StepCount(4), graded.Steps);
+            Assert.Equal(Option.Some(Yellow), unique.Answer.ColourOf(new HiddenCell(5)));
+        }
+
+        [Fact]
+        public void A_level_that_only_two_tags_without_the_ledger_can_start_still_grades()
+        {
             // A generated level (pack rung-sample-23, slot 69) whose deduction stalls unless two tags over several
-            // covers are read together, with no ledger count among them. Such a pair is a D3 step.
+            // covers are read together with no ledger count among them: 15 "touches 0 R" and 15 "touches 0 P".
             const string Text = "pc-lot\nr=1\nsize=8x8\nbays=5\npillars=28,37,59\n"
                 + "vehicles=B:1:2:W;G:3:2:N;Y:4:2:N;R:5:2:E;Y:8:2:N;G:9:2:E;P:14:2:S;B:15:2:S;B:17:2:W;G:24:2:S;B:25:2:N;"
                 + "P:26:2:W;P:31:2:S;R:40:2:W;B:43:3:E;R:46:2:S;B:47:2:S;B:48:2:W;B:50:2:S;Y:56:2:W;B:61:3:E\n"
