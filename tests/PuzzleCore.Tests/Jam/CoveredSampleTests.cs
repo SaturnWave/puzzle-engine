@@ -20,11 +20,12 @@ namespace PuzzleCore.Tests.Jam
     public sealed class CoveredSampleTests
     {
         /// <summary>
-        /// Pinned from the generator before P3 switched the grader to the one ladder (self-pinned: no
-        /// independent implementation). A changed hash means generated covered content changed: stop and
-        /// ask the user before re-pinning.
+        /// Re-pinned once, with the user's approval, after P3 switched the grader to the one ladder (TC10);
+        /// before the switch it was ab84a531…. Self-pinned from the generator: no independent implementation,
+        /// though it was checked against a hash of the CLI's own sample output. A changed hash means generated
+        /// covered content changed: stop and ask the user before re-pinning.
         /// </summary>
-        private const string SamplePin = "ab84a5317508e5f30de3d2689e3e872e0e9bec7a820552728e956a3a24754a9b";
+        private const string SamplePin = "1039e1bd72ebe6dc6e7ed4f5aec3b03e712f020252d0de40caa9c132034f149a";
 
         private static readonly Lazy<IReadOnlyList<string>> SampleLines = new(BuildSampleLines);
 
