@@ -337,10 +337,70 @@ namespace PuzzleCore.Tests.Jam
         }
 
         [Fact]
+        public void A_touch_that_says_the_same_of_each_cover_is_about_the_last_cover_once_the_rest_are_fixed()
+        {
+            // Covers 5 (Y), 7 (R), 8 (Y), tags "5 not R" and 7 "touches 0 R". "5 not R" leaves 5 yellow (D1). The
+            // Touch now has one unknown cover left, and it tells 8 "not red" whatever 5 turned out to be, so it
+            // reads as a tag about 8 alone: yellow (D1). The ledger leaves 7 red (D1).
+            LotDefinition board = SixBySix() with
+            {
+                Vehicles = Covered(SixBySix(), 5, 7, 8),
+                Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Not(new PieceId(5), Red), new LotClue.Touch(new PieceId(7), Red, 0)),
+            };
+            var clues = new LotClues(Load(board));
+
+            var graded = Assert.IsType<DeductionGrade.Graded>(clues.Grade(Budget));
+
+            Assert.Equal(DeductionRung.D1, graded.Rung);
+            Assert.Equal(new StepCount(3), graded.Steps);
+        }
+
+        [Fact]
+        public void A_count_that_works_through_a_cover_fixed_earlier_stays_a_d3_step()
+        {
+            // The recoloured board (5 R, 7 Y, 8 B), covers 5, 7 and 8. "5 not Y" and "5 not B" leave 5 red together
+            // (D2). 7 "touches 1 B" then has one unknown cover left, 8, but what it says of 8 depends on 5 being
+            // red: it works through a cover deduced earlier, so 8 blue is D3. The ledger leaves 7 yellow (D1).
+            LotDefinition recoloured = SixBySix() with { Vehicles = Recoloured(SixBySix(), (4, Yellow), (5, Red), (7, Yellow), (8, Blue)) };
+            LotDefinition board = recoloured with
+            {
+                Vehicles = Covered(recoloured, 5, 7, 8),
+                Clues = ReadOnlyArray.Of<LotClue>(
+                    new LotClue.Not(new PieceId(5), Yellow), new LotClue.Not(new PieceId(5), Blue), new LotClue.Touch(new PieceId(7), Blue, 1)),
+            };
+            var clues = new LotClues(Load(board));
+
+            var graded = Assert.IsType<DeductionGrade.Graded>(clues.Grade(Budget));
+
+            Assert.Equal(DeductionRung.D3, graded.Rung);
+            Assert.Equal(new StepCount(3), graded.Steps);
+        }
+
+        [Fact]
+        public void Two_tags_over_several_covers_needed_together_are_a_d3_step()
+        {
+            // A generated level (pack rung-sample-23, slot 69) whose deduction stalls unless two tags over several
+            // covers are read together, with no ledger count among them. Such a pair is a D3 step.
+            const string Text = "pc-lot\nr=1\nsize=8x8\nbays=5\npillars=28,37,59\n"
+                + "vehicles=B:1:2:W;G:3:2:N;Y:4:2:N;R:5:2:E;Y:8:2:N;G:9:2:E;P:14:2:S;B:15:2:S;B:17:2:W;G:24:2:S;B:25:2:N;"
+                + "P:26:2:W;P:31:2:S;R:40:2:W;B:43:3:E;R:46:2:S;B:47:2:S;B:48:2:W;B:50:2:S;Y:56:2:W;B:61:3:E\n"
+                + "covers=6,15,16,20\nclues=Touch(15,R,0);Touch(15,P,0);Touch(20,R,1)";
+            var read = Assert.IsType<LotTextResult.Read>(LotText.Read(Text));
+            var clues = new LotClues(Load(read.Definition));
+
+            var graded = Assert.IsType<DeductionGrade.Graded>(clues.Grade(Budget));
+
+            Assert.Equal(DeductionRung.D3, graded.Rung);
+            Assert.Equal(new StepCount(4), graded.Steps);
+            Assert.IsType<Uniqueness.Unique>(UniquenessCheck.Run(clues, Budget));
+        }
+
+        [Fact]
         public void One_touch_count_across_two_covers_is_a_d3_deduction()
         {
-            // ?< (7) touches Y^ (5) and Y> (8). Cover 5, 7 and 8 and tag 7 "touches 2 Y": a count over two
-            // unknown covers makes both yellow (D3, one cover per step), then the ledger leaves red for 7 (D1).
+            // ?< (7) touches Y^ (5) and Y> (8). Cover 5, 7 and 8 and tag 7 "touches 2 Y": a count over two unknown
+            // covers makes 5 yellow (D3). With 5 fixed, the tag tells 8 the same alone, so 8 is yellow (D1), and the
+            // ledger leaves red for 7 (D1).
             var clues = new LotClues(Load(TouchCountOverTwoCovers()));
 
             var graded = Assert.IsType<DeductionGrade.Graded>(clues.Grade(Budget));

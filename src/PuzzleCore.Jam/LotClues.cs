@@ -18,9 +18,19 @@ namespace PuzzleCore.Jam
     /// Touch count, an Ahead link (also one to a cover fixed earlier), or the ledger counting over several
     /// unknown covers (Q41). Anything more is NeedsGuess.
     /// </para>
+    /// <para>
+    /// A Touch that says the same of each of its covers (it touches none of the colour, or every covered
+    /// neighbour has it) counts over its covers while two or more are unknown (D3). Once its other covers are
+    /// fixed, it tells the last one the same whatever they turned out to be, so it is then a tag about that
+    /// cover alone, read at D1 or D2.
+    /// </para>
     /// </summary>
     public sealed class LotClues : IClueModel
     {
+        // Every colour id, 1-15, as a set.
+        private static readonly ushort AllColours =
+            (ushort)(((1 << (ColourId.MaxValue + 1)) - 1) & ~((1 << ColourId.MinValue) - 1));
+
         private readonly int[] _ledger = new int[ColourId.MaxValue + 1];
         private readonly List<ColourId> _ledgerColours = new List<ColourId>();
 
@@ -28,7 +38,8 @@ namespace PuzzleCore.Jam
         // covered neighbour) is only in here: no step reads it, and only the contradiction check can break it.
         private readonly List<Rule> _rules = new List<Rule>();
 
-        // Tags about one cover alone, each with the colours it leaves that cover: the D1 and D2 steps read them.
+        // Tags over a single cover, each with the colours it leaves that cover. With the Touch tags that have come
+        // down to one cover (OwnTagsNow), the D1 and D2 steps read them.
         private readonly List<OwnTag> _ownTags = new List<OwnTag>();
 
         // Constraints over several covers (Touch counts, Ahead links), then the ledger's count: the D3 steps.
@@ -119,7 +130,8 @@ namespace PuzzleCore.Jam
             while (true)
             {
                 ushort coloursLeft = ColoursLeft(fixedColours);
-                ushort[] domains = DomainsFor(fixedColours, coloursLeft);
+                List<OwnTag> ownTags = OwnTagsNow(fixedColours);
+                ushort[] domains = DomainsFor(fixedColours, coloursLeft, ownTags);
                 if (IsContradicted(domains))
                 {
                     return new DeductionGrade.NeedsGuess();
@@ -130,7 +142,7 @@ namespace PuzzleCore.Jam
                     return new DeductionGrade.Graded(hardest, new StepCount(steps));
                 }
 
-                Option<Fix> step = EasiestStep(fixedColours, coloursLeft, domains, counter);
+                Option<Fix> step = EasiestStep(fixedColours, coloursLeft, ownTags, domains, counter);
                 if (counter.IsOver)
                 {
                     return new DeductionGrade.BudgetExceeded(new NodeCount(counter.Nodes));
@@ -172,10 +184,50 @@ namespace PuzzleCore.Jam
         }
 
         /// <summary>
+        /// The tags about one cover alone at this step: those over a single cover, plus each Touch that says the
+        /// same of all its covers and has only one of them left unfixed.
+        /// </summary>
+        private List<OwnTag> OwnTagsNow(Option<ColourId>[] fixedColours)
+        {
+            var ownTags = new List<OwnTag>(_ownTags);
+            foreach (Rule rule in _wideRules)
+            {
+                if (rule.EachCoverAllows.TryGet(out ushort allows) && LastUnfixed(rule, fixedColours).TryGet(out int position))
+                {
+                    ownTags.Add(new OwnTag(position, allows));
+                }
+            }
+
+            return ownTags;
+        }
+
+        /// <summary>The rule's only cover not fixed yet; none when no cover or several are left.</summary>
+        private static Option<int> LastUnfixed(Rule rule, Option<ColourId>[] fixedColours)
+        {
+            Option<int> last = Option.None<int>();
+            foreach (int position in rule.Positions)
+            {
+                if (fixedColours[position].HasValue)
+                {
+                    continue;
+                }
+
+                if (last.HasValue)
+                {
+                    return Option.None<int>();
+                }
+
+                last = Option.Some(position);
+            }
+
+            return last;
+        }
+
+        /// <summary>
         /// Each cover's colours at this step: a fixed cover its colour; any other the colours left that every tag
         /// about it alone allows. A D3 step counts over these.
         /// </summary>
-        private ushort[] DomainsFor(Option<ColourId>[] fixedColours, ushort coloursLeft)
+        private static ushort[] DomainsFor(Option<ColourId>[] fixedColours, ushort coloursLeft, List<OwnTag> ownTags)
         {
             var domains = new ushort[fixedColours.Length];
             for (int position = 0; position < domains.Length; position++)
@@ -183,7 +235,7 @@ namespace PuzzleCore.Jam
                 domains[position] = fixedColours[position].TryGet(out ColourId colour) ? Bit(colour.Value) : coloursLeft;
             }
 
-            foreach (OwnTag tag in _ownTags)
+            foreach (OwnTag tag in ownTags)
             {
                 if (!fixedColours[tag.Position].HasValue)
                 {
@@ -223,9 +275,9 @@ namespace PuzzleCore.Jam
         }
 
         /// <summary>The easiest step available now, D1 before D2 before D3, or none when reasoning stalls.</summary>
-        private Option<Fix> EasiestStep(Option<ColourId>[] fixedColours, ushort coloursLeft, ushort[] domains, NodeCounter counter)
+        private Option<Fix> EasiestStep(Option<ColourId>[] fixedColours, ushort coloursLeft, List<OwnTag> ownTags, ushort[] domains, NodeCounter counter)
         {
-            if (D1Step(fixedColours, coloursLeft).TryGet(out Fix byOneTag))
+            if (D1Step(fixedColours, coloursLeft, ownTags).TryGet(out Fix byOneTag))
             {
                 return Option.Some(byOneTag);
             }
@@ -242,7 +294,7 @@ namespace PuzzleCore.Jam
         /// D1, on the lowest cover it fixes: the ledger has one colour left (ledger completion), or one tag about
         /// that cover alone leaves it one of the colours left.
         /// </summary>
-        private Option<Fix> D1Step(Option<ColourId>[] fixedColours, ushort coloursLeft)
+        private static Option<Fix> D1Step(Option<ColourId>[] fixedColours, ushort coloursLeft, List<OwnTag> ownTags)
         {
             for (int position = 0; position < fixedColours.Length; position++)
             {
@@ -256,7 +308,7 @@ namespace PuzzleCore.Jam
                     return Option.Some(new Fix(position, last, DeductionRung.D1));
                 }
 
-                foreach (OwnTag tag in _ownTags)
+                foreach (OwnTag tag in ownTags)
                 {
                     if (tag.Position == position && OnlyColour((ushort)(tag.Allows & coloursLeft)).TryGet(out ColourId colour))
                     {
@@ -588,6 +640,12 @@ namespace PuzzleCore.Jam
 
             public int[] Positions { get; }
 
+            /// <summary>
+            /// The colours the rule leaves each of its covers when it tells every one the same, whatever the others
+            /// are; none when what it says of one cover depends on the others.
+            /// </summary>
+            public virtual Option<ushort> EachCoverAllows => Option.None<ushort>();
+
             /// <summary>Whether the rule holds when every one of its positions has a value.</summary>
             public abstract bool Holds(byte[] values);
 
@@ -677,6 +735,12 @@ namespace PuzzleCore.Jam
                 _colour = colour;
                 _needed = needed;
             }
+
+            /// <summary>None of the covered neighbours has the colour, or every one has it.</summary>
+            public override Option<ushort> EachCoverAllows =>
+                _needed == 0 ? Option.Some((ushort)(AllColours & ~Bit(_colour)))
+                : _needed == Positions.Length ? Option.Some(Bit(_colour))
+                : Option.None<ushort>();
 
             public override bool Holds(byte[] values)
             {
