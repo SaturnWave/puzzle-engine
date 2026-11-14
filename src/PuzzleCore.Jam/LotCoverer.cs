@@ -66,7 +66,7 @@ namespace PuzzleCore.Jam
 
         private static Option<CoveredLot> TryOnce(LotLevel plain, CoverPlan plan, Pcg32 coverStream, Pcg32 clueStream)
         {
-            bool clustered = plan.Rung != DeductionRung.D1;
+            bool clustered = plan.Rung == DeductionRung.D3;
             bool[] covered = ChooseCovers(plain, plan.Covers, coverStream, clustered);
             bool solvedWithoutTags = Build(plain, covered, new List<LotClue>()).TryGet(out LotLevel? bare)
                 && !(new LotClues(bare).Grade(CheckBudget) is DeductionGrade.NeedsGuess);
@@ -75,7 +75,8 @@ namespace PuzzleCore.Jam
                 return Option.None<CoveredLot>();
             }
 
-            // D2/D3 need tags that link several covers; try those first, single-cover tags after.
+            // D3 needs tags that link several covers; try those first, single-cover tags after. D1 and D2 come
+            // from tags about one cover alone, so linking tags first would only steer those slots to D3.
             (List<LotClue> linking, List<LotClue> single) = TrueTags(plain, covered);
             List<LotClue> candidates = clustered
                 ? Shuffle(linking, clueStream).Concat(Shuffle(single, clueStream)).ToList()
@@ -149,7 +150,7 @@ namespace PuzzleCore.Jam
             Build(plain, covered, tags).TryGet(out LotLevel? level) && new LotClues(level).Grade(CheckBudget) is DeductionGrade.Graded;
 
         /// <summary>
-        /// Covered vehicles drawn without replacement. Clustered draws (for D2/D3) prefer a vehicle that
+        /// Covered vehicles drawn without replacement. Clustered draws (for D3) prefer a vehicle that
         /// touches a cover or stands first on a cover's path, or has a cover first on its own path,
         /// so linking tags (Touch, Ahead between covers) exist.
         /// </summary>

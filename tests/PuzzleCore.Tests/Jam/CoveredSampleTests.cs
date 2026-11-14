@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using PuzzleCore.Jam;
@@ -31,6 +32,26 @@ namespace PuzzleCore.Tests.Jam
         public void The_covered_sample_matches_its_pin()
         {
             Assert.Equal(SamplePin, Sha256(string.Join("\n", SampleLines.Value)));
+        }
+
+        [Fact]
+        public void Every_rung_builds_at_least_nine_in_ten_of_its_planned_slots_at_exactly_that_rung()
+        {
+            // The P3 gate (Q17): each rung's build rate on the sample, plain rejects counted as misses. A rung
+            // under 90% goes to the user with the numbers before anything is re-pinned.
+            foreach (IGrouping<string, string[]> rung in SampleLines.Value.Select(line => line.Split(' ')).GroupBy(fields => fields[2]))
+            {
+                int planned = rung.Count();
+                int built = 0;
+                foreach (string[] fields in rung.Where(fields => fields[3] == "built"))
+                {
+                    Assert.Equal(rung.Key, fields[4]);
+                    built++;
+                }
+
+                Assert.True(built * 10 >= planned * 9, rung.Key + ": built " + built.ToString(CultureInfo.InvariantCulture)
+                    + " of " + planned.ToString(CultureInfo.InvariantCulture) + " planned slots.");
+            }
         }
 
         /// <summary>

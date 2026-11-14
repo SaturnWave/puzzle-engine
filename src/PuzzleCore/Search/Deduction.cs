@@ -80,9 +80,8 @@ namespace PuzzleCore.Search
     }
 
     /// <summary>
-    /// The deduction ladder, game-neutral (each game maps its techniques onto it).
-    /// D1: one constraint (with the ledger) forces a cell. D2: a constraint over two unknown cells is
-    /// needed. D3: a count or chain across three or more unknown cells is needed.
+    /// A rung of the one deduction ladder. The rungs are defined only in shared-design.md §2, "The deduction
+    /// ladder"; each game's grader documents how its steps map onto them (Jam: LotClues).
     /// </summary>
     public enum DeductionRung
     {
@@ -194,19 +193,9 @@ namespace PuzzleCore.Search
         }
     }
 
-    /// <summary>Builds the rung that a set of propagation passes reached.</summary>
+    /// <summary>Combines rungs: a level's rung is its hardest step.</summary>
     public static class DeductionRungs
     {
         public static DeductionRung Max(DeductionRung left, DeductionRung right) => (int)left >= (int)right ? left : right;
-
-        public static DeductionRung ForUnknownCount(int unknownCells)
-        {
-            if (unknownCells < 1)
-            {
-                throw new ArgumentOutOfRangeException(nameof(unknownCells), unknownCells, "A deduction involves at least one unknown cell.");
-            }
-
-            return unknownCells == 1 ? DeductionRung.D1 : unknownCells == 2 ? DeductionRung.D2 : DeductionRung.D3;
-        }
     }
 }

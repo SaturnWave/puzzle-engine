@@ -10,11 +10,13 @@ namespace PuzzleCore.Jam
     /// start geometry. Constraints: Not(c); Ahead(Same|Differs) against the first vehicle on the path
     /// at the start; Touch(c, n) over the vehicles sharing an edge with the footprint; the exact ledger.
     /// <para>
-    /// Jam's mapping onto the shared ladder (the brief lets each game map its techniques):
-    /// D1 = one constraint with one unknown cover, or a colour the ledger has used up;
-    /// D2 = one constraint across several unknown covers (a Touch count, the ledger count);
-    /// D3 = two constraints combined (for example an Ahead link together with the ledger).
-    /// Anything that needs more is NeedsGuess.
+    /// Jam's steps on the one ladder (shared-design.md §2, "The deduction ladder"); each step fixes one cover.
+    /// D1: one tag about that cover alone (Not, Ahead against an open vehicle, Touch whose only covered
+    /// neighbour it is) leaves it one of the colours the ledger has left, or the ledger has one colour left
+    /// (ledger completion, Q41). D2: only the tags about that cover alone, together, leave it one colour.
+    /// D3: a constraint over several covers leaves it one colour, alone or with one more such constraint: a
+    /// Touch count, an Ahead link (also one to a cover fixed earlier), or the ledger counting over several
+    /// unknown covers (Q41). Anything more is NeedsGuess.
     /// </para>
     /// </summary>
     public sealed class LotClues : IClueModel
@@ -22,6 +24,12 @@ namespace PuzzleCore.Jam
         private readonly int[] _ledger = new int[ColourId.MaxValue + 1];
         private readonly List<ColourId> _ledgerColours = new List<ColourId>();
         private readonly List<Rule> _rules = new List<Rule>();
+
+        // Tags about one cover alone, each with the colours it leaves that cover: the D1 and D2 steps read them.
+        private readonly List<OwnTag> _ownTags = new List<OwnTag>();
+
+        // Constraints over several covers (Touch counts, Ahead links), then the ledger's count: the D3 steps.
+        private readonly List<Rule> _wideRules = new List<Rule>();
 
         public LotClues(LotLevel level)
         {
@@ -50,7 +58,16 @@ namespace PuzzleCore.Jam
 
             foreach (LotClue clue in level.Clues)
             {
-                _rules.Add(RuleFor(level, clue, positionOf));
+                Rule rule = RuleFor(level, clue, positionOf);
+                _rules.Add(rule);
+                if (rule.Positions.Length == 1)
+                {
+                    _ownTags.Add(new OwnTag(rule.Positions[0], ColoursAllowedBy(rule)));
+                }
+                else if (rule.Positions.Length >= 2)
+                {
+                    _wideRules.Add(rule);
+                }
             }
 
             var all = new int[hidden.Count];
@@ -59,7 +76,9 @@ namespace PuzzleCore.Jam
                 all[position] = position;
             }
 
-            _rules.Add(new LedgerRule(all, _ledger));
+            var ledgerRule = new LedgerRule(all, _ledger);
+            _rules.Add(ledgerRule);
+            _wideRules.Add(ledgerRule);
         }
 
         public ReadOnlyArray<HiddenCell> HiddenCells { get; }
@@ -83,179 +102,241 @@ namespace PuzzleCore.Jam
         }
 
         /// <summary>
-        /// Grades the deduction by propagation only, never by a what-if split, the way a careful player
-        /// would: one deduction at a time, always the easiest available (D1 before D2 before D3). A
-        /// deduction keeps only the colours that some assignment satisfying the constraint(s) supports.
-        /// Steps counts the deductions; Rung is the hardest one needed.
+        /// Grades the deduction the way a careful player reasons: one cover at a time, always with the easiest
+        /// step available (D1 before D2 before D3), never with a what-if split. Between steps the player knows
+        /// the covers fixed so far; the tags and the ledger are read afresh at every step. Each step fixes one
+        /// cover, so Steps is the cover count on a graded level; Rung is the hardest step needed.
         /// </summary>
         public DeductionGrade Grade(NodeBudget budget)
         {
-            var domains = new ushort[HiddenCells.Count];
-            ushort initial = 0;
-            foreach (ColourId colour in _ledgerColours)
-            {
-                initial |= (ushort)(1 << colour.Value);
-            }
-
-            for (int position = 0; position < domains.Length; position++)
-            {
-                domains[position] = initial;
-            }
-
+            var fixedColours = new Option<ColourId>[HiddenCells.Count];
             var counter = new NodeCounter(budget.Nodes);
             DeductionRung hardest = DeductionRung.D1;
             int steps = 0;
             while (true)
             {
-                if (IsContradicted(domains, counter))
+                ushort coloursLeft = ColoursLeft(fixedColours);
+                ushort[] domains = DomainsFor(fixedColours, coloursLeft);
+                if (IsContradicted(domains))
                 {
                     return new DeductionGrade.NeedsGuess();
                 }
 
-                if (AllResolved(domains))
+                if (AllFixed(fixedColours))
                 {
                     return new DeductionGrade.Graded(hardest, new StepCount(steps));
                 }
 
-                Option<DeductionRung> step = EasiestDeduction(domains, counter);
+                Option<Fix> step = EasiestStep(fixedColours, coloursLeft, domains, counter);
                 if (counter.IsOver)
                 {
                     return new DeductionGrade.BudgetExceeded(new NodeCount(counter.Nodes));
                 }
 
-                if (!step.TryGet(out DeductionRung rung))
+                if (!step.TryGet(out Fix fix))
                 {
                     return new DeductionGrade.NeedsGuess();
                 }
 
-                hardest = DeductionRungs.Max(hardest, rung);
+                fixedColours[fix.Position] = Option.Some(fix.Colour);
+                hardest = DeductionRungs.Max(hardest, fix.Rung);
                 steps++;
             }
         }
 
-        /// <summary>Applies the first deduction found, easiest rung first, and returns its rung.</summary>
-        private Option<DeductionRung> EasiestDeduction(ushort[] domains, NodeCounter counter)
+        /// <summary>The ledger colours some cover still has to take: a colour the fixed covers used up is off (ledger completion).</summary>
+        private ushort ColoursLeft(Option<ColourId>[] fixedColours)
         {
-            if (LedgerUsedUp(domains))
+            var left = (int[])_ledger.Clone();
+            foreach (Option<ColourId> fixedColour in fixedColours)
             {
-                return Option.Some(DeductionRung.D1);
-            }
-
-            foreach (Rule rule in _rules)
-            {
-                if (rule.UnknownCount(domains) == 1 && Narrow(new[] { rule }, domains, counter))
+                if (fixedColour.TryGet(out ColourId colour))
                 {
-                    return Option.Some(DeductionRung.D1);
+                    left[colour.Value]--;
                 }
             }
 
-            foreach (Rule rule in _rules)
-            {
-                if (rule.UnknownCount(domains) >= 2 && Narrow(new[] { rule }, domains, counter))
-                {
-                    return Option.Some(DeductionRung.D2);
-                }
-            }
-
-            for (int first = 0; first < _rules.Count; first++)
-            {
-                for (int second = first + 1; second < _rules.Count; second++)
-                {
-                    bool isLinked = _rules[first].SharesUnknownWith(_rules[second], domains);
-                    if (isLinked && Narrow(new[] { _rules[first], _rules[second] }, domains, counter))
-                    {
-                        return Option.Some(DeductionRung.D3);
-                    }
-                }
-            }
-
-            return Option.None<DeductionRung>();
-        }
-
-        /// <summary>One colour whose ledger count is already reached by resolved covers comes off every other cover (D1).</summary>
-        private bool LedgerUsedUp(ushort[] domains)
-        {
+            ushort coloursLeft = 0;
             foreach (ColourId colour in _ledgerColours)
             {
-                ushort bit = (ushort)(1 << colour.Value);
-                int resolved = 0;
-                bool appearsElsewhere = false;
-                foreach (ushort domain in domains)
+                if (left[colour.Value] > 0)
                 {
-                    resolved += domain == bit ? 1 : 0;
-                    appearsElsewhere |= domain != bit && (domain & bit) != 0;
+                    coloursLeft |= Bit(colour.Value);
+                }
+            }
+
+            return coloursLeft;
+        }
+
+        /// <summary>
+        /// Each cover's colours at this step: a fixed cover its colour; any other the colours left that every tag
+        /// about it alone allows. A D3 step counts over these.
+        /// </summary>
+        private ushort[] DomainsFor(Option<ColourId>[] fixedColours, ushort coloursLeft)
+        {
+            var domains = new ushort[fixedColours.Length];
+            for (int position = 0; position < domains.Length; position++)
+            {
+                domains[position] = fixedColours[position].TryGet(out ColourId colour) ? Bit(colour.Value) : coloursLeft;
+            }
+
+            foreach (OwnTag tag in _ownTags)
+            {
+                if (!fixedColours[tag.Position].HasValue)
+                {
+                    domains[tag.Position] &= tag.Allows;
+                }
+            }
+
+            return domains;
+        }
+
+        /// <summary>Whether a cover has no colour left, or the covers already known break a tag or the ledger.</summary>
+        private bool IsContradicted(ushort[] domains)
+        {
+            var values = new byte[domains.Length];
+            for (int position = 0; position < domains.Length; position++)
+            {
+                if (domains[position] == 0)
+                {
+                    return true;
                 }
 
-                if (resolved < _ledger[colour.Value] || !appearsElsewhere)
+                if (IsSingle(domains[position]))
+                {
+                    values[position] = SingleColour(domains[position]);
+                }
+            }
+
+            foreach (Rule rule in _rules)
+            {
+                if (rule.UnknownCount(domains) == 0 && !rule.Holds(values))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>The easiest step available now, D1 before D2 before D3, or none when reasoning stalls.</summary>
+        private Option<Fix> EasiestStep(Option<ColourId>[] fixedColours, ushort coloursLeft, ushort[] domains, NodeCounter counter)
+        {
+            if (D1Step(fixedColours, coloursLeft).TryGet(out Fix byOneTag))
+            {
+                return Option.Some(byOneTag);
+            }
+
+            if (D2Step(fixedColours, domains).TryGet(out Fix byTagsTogether))
+            {
+                return Option.Some(byTagsTogether);
+            }
+
+            return D3Step(domains, counter);
+        }
+
+        /// <summary>
+        /// D1, on the lowest cover it fixes: the ledger has one colour left (ledger completion), or one tag about
+        /// that cover alone leaves it one of the colours left.
+        /// </summary>
+        private Option<Fix> D1Step(Option<ColourId>[] fixedColours, ushort coloursLeft)
+        {
+            for (int position = 0; position < fixedColours.Length; position++)
+            {
+                if (fixedColours[position].HasValue)
                 {
                     continue;
                 }
 
-                for (int position = 0; position < domains.Length; position++)
+                if (IsSingle(coloursLeft))
                 {
-                    if (domains[position] != bit)
+                    return Option.Some(new Fix(position, coloursLeft, DeductionRung.D1));
+                }
+
+                foreach (OwnTag tag in _ownTags)
+                {
+                    ushort leaves = (ushort)(tag.Allows & coloursLeft);
+                    if (tag.Position == position && IsSingle(leaves))
                     {
-                        domains[position] = (ushort)(domains[position] & ~bit);
+                        return Option.Some(new Fix(position, leaves, DeductionRung.D1));
                     }
                 }
-
-                return true;
             }
 
-            return false;
-        }
-
-        /// <summary>Whether the resolved covers already break some constraint, or a cover has no colour left.</summary>
-        private bool IsContradicted(ushort[] domains, NodeCounter counter)
-        {
-            foreach (ushort domain in domains)
-            {
-                if (domain == 0)
-                {
-                    return true;
-                }
-            }
-
-            foreach (Rule rule in _rules)
-            {
-                if (rule.UnknownCount(domains) == 0 && !HasSupport(new[] { rule }, domains, counter))
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return Option.None<Fix>();
         }
 
         /// <summary>
-        /// Keeps, on each unknown position of the rules, only colours that some joint assignment
-        /// satisfying all of them supports. Returns whether any domain shrank.
+        /// D2, on the lowest cover it fixes: the tags about that cover alone leave it one colour together. None
+        /// of them did alone, or D1 would have fixed it.
         /// </summary>
-        private static bool Narrow(Rule[] rules, ushort[] domains, NodeCounter counter)
+        private static Option<Fix> D2Step(Option<ColourId>[] fixedColours, ushort[] domains)
+        {
+            for (int position = 0; position < domains.Length; position++)
+            {
+                if (!fixedColours[position].HasValue && IsSingle(domains[position]))
+                {
+                    return Option.Some(new Fix(position, domains[position], DeductionRung.D2));
+                }
+            }
+
+            return Option.None<Fix>();
+        }
+
+        /// <summary>
+        /// D3: one constraint over several covers, or two such constraints together, leave a cover one colour,
+        /// counting over the colours each cover has at this step. Every unfixed cover has two colours or more
+        /// here, or D1 or D2 would have fixed it, so the covers with one colour are exactly the fixed ones.
+        /// </summary>
+        private Option<Fix> D3Step(ushort[] domains, NodeCounter counter)
+        {
+            foreach (Rule rule in _wideRules)
+            {
+                if (FixedBy(new[] { rule }, domains, counter).TryGet(out Fix byOne))
+                {
+                    return Option.Some(byOne);
+                }
+            }
+
+            for (int first = 0; first < _wideRules.Count; first++)
+            {
+                for (int second = first + 1; second < _wideRules.Count; second++)
+                {
+                    Rule one = _wideRules[first];
+                    Rule other = _wideRules[second];
+                    if (one.SharesUnknownWith(other, domains) && FixedBy(new[] { one, other }, domains, counter).TryGet(out Fix byPair))
+                    {
+                        return Option.Some(byPair);
+                    }
+                }
+            }
+
+            return Option.None<Fix>();
+        }
+
+        /// <summary>
+        /// The lowest unknown cover the rules leave one colour, over every assignment of their unknown covers
+        /// that satisfies them all. None once the node budget runs out: a cut-off count proves nothing.
+        /// </summary>
+        private static Option<Fix> FixedBy(Rule[] rules, ushort[] domains, NodeCounter counter)
         {
             List<int> unknown = UnknownPositions(rules, domains);
             var supported = new ushort[unknown.Count];
             Enumerate(rules, domains, unknown, 0, new byte[domains.Length], supported, counter);
-            bool progressed = false;
+            if (counter.IsOver)
+            {
+                return Option.None<Fix>();
+            }
+
             for (int index = 0; index < unknown.Count; index++)
             {
-                int position = unknown[index];
-                ushort narrowed = (ushort)(domains[position] & supported[index]);
-                if (narrowed != domains[position])
+                if (IsSingle(supported[index]))
                 {
-                    domains[position] = narrowed;
-                    progressed = true;
+                    return Option.Some(new Fix(unknown[index], supported[index], DeductionRung.D3));
                 }
             }
 
-            return progressed;
-        }
-
-        private static bool HasSupport(Rule[] rules, ushort[] domains, NodeCounter counter)
-        {
-            List<int> unknown = UnknownPositions(rules, domains);
-            var supported = new ushort[unknown.Count];
-            return Enumerate(rules, domains, unknown, 0, new byte[domains.Length], supported, counter);
+            return Option.None<Fix>();
         }
 
         /// <summary>Enumerates the unknown positions over their domains (resolved ones fixed); marks supported colours.</summary>
@@ -280,7 +361,7 @@ namespace PuzzleCore.Jam
 
                 for (int marked = 0; marked < unknown.Count; marked++)
                 {
-                    supported[marked] |= (ushort)(1 << values[unknown[marked]]);
+                    supported[marked] |= Bit(values[unknown[marked]]);
                 }
 
                 return true;
@@ -314,35 +395,51 @@ namespace PuzzleCore.Jam
             }
         }
 
+        /// <summary>The rules' positions with more than one colour, ascending.</summary>
         private static List<int> UnknownPositions(Rule[] rules, ushort[] domains)
         {
-            var unknown = new List<int>();
+            var inRules = new bool[domains.Length];
             foreach (Rule rule in rules)
             {
                 foreach (int position in rule.Positions)
                 {
-                    if (!IsSingle(domains[position]) && !unknown.Contains(position))
-                    {
-                        unknown.Add(position);
-                    }
+                    inRules[position] = true;
+                }
+            }
+
+            var unknown = new List<int>();
+            for (int position = 0; position < domains.Length; position++)
+            {
+                if (inRules[position] && !IsSingle(domains[position]))
+                {
+                    unknown.Add(position);
                 }
             }
 
             return unknown;
         }
 
-        private static bool AllResolved(ushort[] domains)
+        /// <summary>The colours a tag about one cover leaves it, tried one by one.</summary>
+        private static ushort ColoursAllowedBy(Rule tag)
         {
-            foreach (ushort domain in domains)
+            int position = tag.Positions[0];
+            var values = new byte[position + 1];
+            ushort allows = 0;
+            for (byte colour = ColourId.MinValue; colour <= ColourId.MaxValue; colour++)
             {
-                if (!IsSingle(domain))
+                values[position] = colour;
+                if (tag.Holds(values))
                 {
-                    return false;
+                    allows |= Bit(colour);
                 }
             }
 
-            return true;
+            return allows;
         }
+
+        private static bool AllFixed(Option<ColourId>[] fixedColours) => System.Array.TrueForAll(fixedColours, colour => colour.HasValue);
+
+        private static ushort Bit(byte colour) => (ushort)(1 << colour);
 
         private static bool IsSingle(ushort domain) => domain != 0 && (domain & (domain - 1)) == 0;
 
@@ -444,6 +541,37 @@ namespace PuzzleCore.Jam
             public bool IsOver => Nodes > _budget;
 
             public void Count() => Nodes++;
+        }
+
+        /// <summary>One step of the deduction: the cover it fixes, that cover's colour and the step's rung.</summary>
+        private readonly struct Fix
+        {
+            public Fix(int position, ushort colourBit, DeductionRung rung)
+            {
+                Position = position;
+                Colour = new ColourId(SingleColour(colourBit));
+                Rung = rung;
+            }
+
+            public int Position { get; }
+
+            public ColourId Colour { get; }
+
+            public DeductionRung Rung { get; }
+        }
+
+        /// <summary>A tag about one cover alone, and the colours it leaves that cover.</summary>
+        private readonly struct OwnTag
+        {
+            public OwnTag(int position, ushort allows)
+            {
+                Position = position;
+                Allows = allows;
+            }
+
+            public int Position { get; }
+
+            public ushort Allows { get; }
         }
 
         /// <summary>One constraint over some hidden positions. Values are indexed by position (colour 1-15).</summary>
