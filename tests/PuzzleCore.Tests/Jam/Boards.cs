@@ -86,6 +86,44 @@ namespace PuzzleCore.Tests.Jam
                 Car(Yellow, 20, Facing.West)),
             Clues: ReadOnlyArray.Empty<LotClue>());
 
+        /// <summary>
+        /// A 5×5 lot with four bays where the first blue waits behind two vehicles, one of them behind a third.
+        /// Pieces in anchor order: 0 B&gt; (behind 1 and 2) 1 Bv (behind 3) 2 R&gt; 3 Bv 4 R&lt; 5 R&gt;. Piece 0's path
+        /// holds pieces 1 and 2, and piece 1's holds piece 3, so three vehicles must leave before piece 0 can.
+        /// </summary>
+        public static LotDefinition BuriedBehindTwo() => new(
+            Width: 5,
+            Height: 5,
+            Bays: 4,
+            Pillars: ReadOnlyArray.Empty<int>(),
+            Vehicles: ReadOnlyArray.Of(
+                Car(Blue, 0, Facing.East),
+                Car(Blue, 2, Facing.South),
+                Car(Red, 3, Facing.East),
+                Car(Blue, 12, Facing.South),
+                Car(Red, 20, Facing.West),
+                Car(Red, 23, Facing.East)),
+            Clues: ReadOnlyArray.Empty<LotClue>());
+
+        /// <summary>
+        /// A 5×5 lot of six blue cars with four bays: a chain where piece 0 waits behind 1, 1 behind 2 and 2 behind 5,
+        /// and three free cars. Pieces in anchor order: 0 B&gt; 1 Bv 2 Bv 3 B&lt; 4 B&lt; 5 B&gt;. Exit depths by PieceId:
+        /// 3, 2, 1, 0, 0, 0, so the deepest cars have the lowest PieceIds.
+        /// </summary>
+        public static LotDefinition SixBluesInAChain() => new(
+            Width: 5,
+            Height: 5,
+            Bays: 4,
+            Pillars: ReadOnlyArray.Empty<int>(),
+            Vehicles: ReadOnlyArray.Of(
+                Car(Blue, 0, Facing.East),
+                Car(Blue, 2, Facing.South),
+                Car(Blue, 12, Facing.South),
+                Car(Blue, 15, Facing.West),
+                Car(Blue, 20, Facing.West),
+                Car(Blue, 22, Facing.East)),
+            Clues: ReadOnlyArray.Empty<LotClue>());
+
         public static VehicleSpec Car(ColourId colour, int anchor, Facing facing, bool covered = false) =>
             new(colour, anchor, VehicleLength.Two, facing, covered);
 

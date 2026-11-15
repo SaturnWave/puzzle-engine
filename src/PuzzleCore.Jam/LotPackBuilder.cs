@@ -4,8 +4,8 @@ using PuzzleCore.Search;
 namespace PuzzleCore.Jam
 {
     /// <summary>
-    /// One campaign level ready to ship: the level, its par (fewest bays that win) with a par order,
-    /// and, on covered levels, the deduction grade. LevelKind follows the brief's sawtooth.
+    /// One campaign level ready to ship: the level, its PeakPar (fewest bays that win) with a par path that never
+    /// uses more, and, on covered levels, the deduction grade. <see cref="LotGrades"/> grades it.
     /// </summary>
     public sealed record BuiltLevel(LotLevel Level, CapacityCount PeakPar, ReadOnlyArray<Exit> ParPath, Option<DeductionGrade.Graded> Deduction)
     {
