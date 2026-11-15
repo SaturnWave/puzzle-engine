@@ -38,12 +38,22 @@ namespace PuzzleCore.Tests.Core
             Assert.Equal(("deduction", "deduction"), (thinkWithout.ParamName, planWith.ParamName));
         }
 
-        [Fact]
-        public void A_level_grade_refuses_a_kind_or_a_deduction_rung_outside_its_enum()
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(2)]
+        public void A_level_grade_refuses_a_kind_outside_its_enum(int kind)
         {
-            var unknownRung = new DeductionGrade.Graded((DeductionRung)3, new StepCount(2));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new LevelGrade(Plan, Option.None<DeductionGrade.Graded>(), (LevelKind)kind));
+        }
 
-            Assert.Throws<ArgumentOutOfRangeException>(() => new LevelGrade(Plan, Option.None<DeductionGrade.Graded>(), (LevelKind)2));
+        /// <summary>Below D1 and above D3: the writer could not name either.</summary>
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(3)]
+        public void A_level_grade_refuses_a_deduction_rung_outside_its_enum(int rung)
+        {
+            var unknownRung = new DeductionGrade.Graded((DeductionRung)rung, new StepCount(2));
+
             Assert.Throws<ArgumentOutOfRangeException>(() => new LevelGrade(Plan, Option.Some(unknownRung), LevelKind.Think));
         }
 

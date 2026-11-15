@@ -84,7 +84,7 @@ namespace PuzzleCore.Tests.Jam
         public void Every_colour_up_to_the_highest_colour_id_counts()
         {
             // ThirdsBehindYellows with its yellows in colour 15, the highest: still (1 + 1 + 0) / 3.
-            LotDefinition board = Repainted(ThirdsBehindYellows(), Yellow, new ColourId(ColourId.MaxValue));
+            LotDefinition board = Repainted(ThirdsBehindYellows(), from: Yellow, to: new ColourId(ColourId.MaxValue));
 
             Assert.Equal(new Thousandths(666), LotFeatures.BuriedThird(Load(board)));
         }
@@ -103,6 +103,7 @@ namespace PuzzleCore.Tests.Jam
             Assert.Equal(new Thousandths(24000), Thousandths.MeanOf(new[] { 48, 0 }));
             Assert.Throws<ArgumentException>(() => Thousandths.MeanOf(Array.Empty<int>()));
             Assert.Throws<ArgumentOutOfRangeException>(() => Thousandths.MeanOf(new[] { -1, 2, 2 }));
+            Assert.Throws<ArgumentOutOfRangeException>(() => Thousandths.MeanOf(new[] { 2, -1, 2 }));
             Assert.Throws<ArgumentOutOfRangeException>(() => new Thousandths(-1));
             Assert.Equal("5380", new Thousandths(5380).ToString());
         }

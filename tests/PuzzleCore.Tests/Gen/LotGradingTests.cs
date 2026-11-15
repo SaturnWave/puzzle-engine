@@ -68,10 +68,15 @@ namespace PuzzleCore.Tests.Gen
             Assert.Equal(hasRoom, LotGrading.HasRoomForIds(pack, slotCount));
         }
 
-        [Fact]
-        public void A_negative_slot_count_is_refused()
+        /// <summary>The method's own refusal, not the level index's or an overflow of slotCount - 1.</summary>
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(int.MinValue)]
+        public void A_negative_slot_count_is_refused(int slotCount)
         {
-            Assert.Throws<ArgumentOutOfRangeException>(() => LotGrading.HasRoomForIds(Pack, -1));
+            ArgumentOutOfRangeException refusal = Assert.Throws<ArgumentOutOfRangeException>(() => LotGrading.HasRoomForIds(Pack, slotCount));
+
+            Assert.Equal("slotCount", refusal.ParamName);
         }
     }
 }

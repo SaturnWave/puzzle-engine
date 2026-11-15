@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using PuzzleCore.Jam;
 
 namespace PuzzleCore.Tests.Jam
@@ -125,8 +126,8 @@ namespace PuzzleCore.Tests.Jam
             Clues: ReadOnlyArray.Empty<LotClue>());
 
         /// <summary>
-        /// A 5×5 lot of six blue cars with four bays: piece 0 waits behind 1 and 1 behind 2, and three cars are free.
-        /// Pieces in anchor order: 0 B&gt; 1 Bv 2 Bv 3 B&lt; 4 B&gt; 5 B&lt;. Exit depths by PieceId: 2, 1, 0, 0, 0, 0,
+        /// A 5×5 lot of six blue cars with four bays: piece 0 waits behind 1 and 1 behind 2, and pieces 2-5 can leave at
+        /// once. Pieces in anchor order: 0 B&gt; 1 Bv 2 Bv 3 B&lt; 4 B&gt; 5 B&lt;. Exit depths by PieceId: 2, 1, 0, 0, 0, 0,
         /// which rank as 0, 0, 0, 0, 1, 2: the two sets end at depths 0 and 2, with the 4th and 5th cars between.
         /// </summary>
         public static LotDefinition SixBluesInAShortChain() => new(
@@ -143,9 +144,17 @@ namespace PuzzleCore.Tests.Jam
                 Car(Blue, 20, Facing.West)),
             Clues: ReadOnlyArray.Empty<LotClue>());
 
-        /// <summary>The board with every car of one colour repainted in another.</summary>
+        /// <summary>
+        /// The board with every car of colour <paramref name="from"/> repainted <paramref name="to"/>. Some car has the
+        /// first colour, so swapped arguments fail instead of leaving the board as it was. Call it with named arguments.
+        /// </summary>
         public static LotDefinition Repainted(LotDefinition board, ColourId from, ColourId to)
         {
+            if (!board.Vehicles.Any(vehicle => vehicle.Colour == from))
+            {
+                throw new ArgumentException("No car has the colour to repaint.", nameof(from));
+            }
+
             var vehicles = new List<VehicleSpec>();
             foreach (VehicleSpec vehicle in board.Vehicles)
             {

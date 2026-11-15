@@ -9,8 +9,6 @@ namespace PuzzleCore.Jam
     /// </summary>
     public sealed record BuiltLevel(LotLevel Level, CapacityCount PeakPar, ReadOnlyArray<Exit> ParPath, Option<DeductionGrade.Graded> Deduction)
     {
-        public bool IsCovered => Deduction.HasValue;
-
         public int Slack => Level.Bays.Value - PeakPar.Value;
     }
 

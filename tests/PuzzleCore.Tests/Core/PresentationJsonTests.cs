@@ -118,12 +118,19 @@ namespace PuzzleCore.Tests.Core
         public void Each_slot_must_be_above_the_slot_just_before_it()
         {
             // Slots 3, 24, 10: the third level is above the first but below the second.
-            const string SlotTen =
-                ",{\"fingerprint\":\"" + PlainPrint + "\",\"kind\":\"Plan\",\"levelId\":\"grade-test-0010\","
-                + "\"plan\":{\"deadEnd\":640,\"minFreeCapacity\":2,\"par\":12,\"peakPar\":3,\"spareNeed\":0},\"slot\":10}";
-            string text = JamText.Replace("],\"packId\"", SlotTen + "],\"packId\"", StringComparison.Ordinal);
+            Assert.Equal(new[] { "$.levels[2].slot: slots must be in strictly ascending order" }, Problems(WithSlotTen(JamText)));
+        }
 
-            Assert.Equal(new[] { "$.levels[2].slot: slots must be in strictly ascending order" }, Problems(text));
+        /// <summary>
+        /// A level with a bad plan field is left out, whichever field it is, and the next level is checked against the
+        /// last level read: with slot 24 left out, slot 10 follows slot 3.
+        /// </summary>
+        [Theory]
+        [InlineData("\"par\":15", "\"par\":-1", "$.levels[1].plan.par: -1 is outside 0..2147483647")]
+        [InlineData("\"peakPar\":4", "\"peakPar\":null", "$.levels[1].plan.peakPar: expected an integer, found null")]
+        public void A_level_with_a_bad_plan_field_is_left_out_whichever_field_it_is(string find, string replacement, string problem)
+        {
+            Assert.Equal(new[] { problem }, Problems(WithSlotTen(JamText).Replace(find, replacement, StringComparison.Ordinal)));
         }
 
         [Fact]
@@ -200,6 +207,10 @@ namespace PuzzleCore.Tests.Core
             Assert.Throws<ArgumentException>(() => new PresentationFile(GameKind.Jam, Pack, ReadOnlyArray.Of(twentyFour, three)));
             Assert.Throws<ArgumentException>(() => new PresentationFile(GameKind.Jam, Pack, ReadOnlyArray.Of(three, three)));
             Assert.Throws<ArgumentException>(() => new PresentationFile(GameKind.Jam, PackId.Parse("other-pack").Or(default), ReadOnlyArray.Of(three)));
+
+            // Slots 3, 24, 10: the third is above the first but below the one just before it.
+            PresentationLevel ten = Level(10, PlainPrint, three.Grade);
+            Assert.Throws<ArgumentException>(() => new PresentationFile(GameKind.Jam, Pack, ReadOnlyArray.Of(three, twentyFour, ten)));
         }
 
         /// <summary>The writer could not write these; every file the constructor accepts can be written.</summary>
@@ -208,6 +219,7 @@ namespace PuzzleCore.Tests.Core
         {
             PresentationLevel three = JamFile().Levels[0];
 
+            Assert.Throws<ArgumentOutOfRangeException>(() => new PresentationFile((GameKind)(-1), Pack, ReadOnlyArray.Of(three)));
             Assert.Throws<ArgumentOutOfRangeException>(() => new PresentationFile((GameKind)2, Pack, ReadOnlyArray.Of(three)));
             Assert.Throws<ArgumentException>(() => new PresentationFile(GameKind.Jam, default, ReadOnlyArray.Empty<PresentationLevel>()));
             Assert.Throws<ArgumentException>(() => new PresentationFile(GameKind.Jam, Pack, ReadOnlyArray.Of(three with { Fingerprint = default })));
@@ -222,6 +234,13 @@ namespace PuzzleCore.Tests.Core
                 PlanOf(par: 15, deadEnd: 892, minFreeCapacity: 1, peakPar: Option.Some(new CapacityCount(4))),
                 Option.Some(new DeductionGrade.Graded(DeductionRung.D2, new StepCount(3))),
                 LevelKind.Think))));
+
+        /// <summary>The text with a third, plain level at slot 10 appended after the last.</summary>
+        private static string WithSlotTen(string text) => text.Replace(
+            "],\"packId\"",
+            ",{\"fingerprint\":\"" + PlainPrint + "\",\"kind\":\"Plan\",\"levelId\":\"grade-test-0010\","
+                + "\"plan\":{\"deadEnd\":640,\"minFreeCapacity\":2,\"par\":12,\"peakPar\":3,\"spareNeed\":0},\"slot\":10}],\"packId\"",
+            StringComparison.Ordinal);
 
         /// <summary>A Sort pack of one plain level at slot 7, without a peak par.</summary>
         private static PresentationFile SortFile() => new(GameKind.Sort, Pack, ReadOnlyArray.Of(

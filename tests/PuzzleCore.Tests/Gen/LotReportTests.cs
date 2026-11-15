@@ -73,10 +73,13 @@ namespace PuzzleCore.Tests.Gen
         public void A_graded_pack_refuses_a_level_its_text_cannot_write()
         {
             GradedLot[] levels = HandMadeGrades.Graded().Levels.ToArray();
-            LotLevel colourFifteen = Load(Repainted(SixBluesInAChain() with { Height = 6 }, Blue, new ColourId(ColourId.MaxValue)));
+            LotLevel colourFifteen = Load(Repainted(SixBluesInAChain() with { Height = 6 }, from: Blue, to: new ColourId(ColourId.MaxValue)));
             levels[0] = levels[0] with { Built = levels[0].Built with { Level = colourFifteen } };
 
-            Assert.ThrowsAny<ArgumentException>(() => new GradedLotPack(HandMadeGrades.TestPack, levels));
+            ArgumentException refusal = Assert.Throws<ArgumentException>(() => new GradedLotPack(HandMadeGrades.TestPack, levels));
+
+            Assert.Equal("levels", refusal.ParamName);
+            Assert.IsType<ArgumentOutOfRangeException>(refusal.InnerException);
         }
 
         [Fact]
