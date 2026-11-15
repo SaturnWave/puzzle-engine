@@ -219,8 +219,9 @@ namespace PuzzleCore.Tests.Core
         {
             PresentationLevel three = JamFile().Levels[0];
 
-            Assert.Throws<ArgumentOutOfRangeException>(() => new PresentationFile((GameKind)(-1), Pack, ReadOnlyArray.Of(three)));
-            Assert.Throws<ArgumentOutOfRangeException>(() => new PresentationFile((GameKind)2, Pack, ReadOnlyArray.Of(three)));
+            // Without levels, so that only the game check can refuse the file.
+            Assert.Throws<ArgumentOutOfRangeException>(() => new PresentationFile((GameKind)(-1), Pack, ReadOnlyArray.Empty<PresentationLevel>()));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new PresentationFile((GameKind)2, Pack, ReadOnlyArray.Empty<PresentationLevel>()));
             Assert.Throws<ArgumentException>(() => new PresentationFile(GameKind.Jam, default, ReadOnlyArray.Empty<PresentationLevel>()));
             Assert.Throws<ArgumentException>(() => new PresentationFile(GameKind.Jam, Pack, ReadOnlyArray.Of(three with { Fingerprint = default })));
         }
