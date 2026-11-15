@@ -31,7 +31,7 @@ puzzle-engine/                         (engine repo, shared by both games)
   src/PuzzleClient          netstandard2.1  client rules: Interstitials.After (pure; integer inputs, no clock)
   src/PuzzleCore.Gen        net10.0         offline pack writer: JSON packs, presentation files,
                                             build reports, grading reports (CSV)
-  src/PuzzleCore.Cli        net10.0         gen / validate / sim / bench / replay / demo (text renderer)
+  src/PuzzleCore.Cli        net10.0         gen / rungs / validate / sim / bench / replay / demo (text renderer)
   src/Server.CloudCode      net (UGS)       thin adapter: request -> IReplayValidator -> response
   tests/PuzzleCore.Tests    net10.0, xUnit  golden, property and guard tests (tr-TR / sv-SE culture)
   clients/Playtest          net10.0         Blazor playtest harness (not shipped; not in the sln)
@@ -533,9 +533,9 @@ What changed:
 | Records, `PuzzleEvent` and replay | A hand-written record replays to `Valid(Won)`; golden replays pass | Met before the plans. The validator project: Covered Lot P6 |
 | Solver and `bench` | Solver ⇔ validator test passes; p50/p99 solve times recorded at 8×8 | "The solver and the validator agree": Covered Lot P6. Solve times at 8×8: P9 |
 | Jam plain generator and pack writer | `gen` makes 1,000 plain levels, all `Solved` under `validate`, with zero loader rejects; generation rate recorded | Pack writer: Covered Lot P7. The 1,000-level gate run and the generation rate: P9 |
-| Near miss, spare limit, rewind reach, fail offer, grades, playouts, fail cause | Offer-eligibility, near-miss-soundness and spare-limit tests pass | Met before the plans. `FailCause`: Covered Lot P2. Grades: P4 |
+| Near miss, spare limit, rewind reach, fail offer, grades, playouts, fail cause | Offer-eligibility, near-miss-soundness and spare-limit tests pass | Met before the plans. `FailCause`: met in Covered Lot's P2. Grades: P4 |
 | Testers and default budgets | Tester list; budgets set | Default budgets: Covered Lot P9. Testers: P12 (greybox) and P15 (closed test) |
-| Jam clue layer, bots, engineering gate and greybox pack | Covered levels `Unique` and `Graded`; engineering gate passes; first calibration table | Clue layer: met before the plans; each covered slot at its exact rung: Covered Lot P3. First calibration table: P5. Engineering gate: P9. Greybox pack: P12 |
+| Jam clue layer, bots, engineering gate and greybox pack | Covered levels `Unique` and `Graded`; engineering gate passes; first calibration table | Clue layer: met before the plans; each covered slot at its exact rung: met in Covered Lot's P3. First calibration table: P5. Engineering gate: P9. Greybox pack: P12 |
 | Sort Stage 0, plain core and generator | Sort golden rule, solver ⇔ validator and golden pack tests pass; 1,000 plain levels `Solved` | The Sealed Vials plan |
 | Covered Lot `Play` scene and greybox | The Covered Lot greybox | Covered Lot P12's gate; the test itself is P13 |
 | Sort clue layer, bots, `Play` scene and greybox | The Sealed Vials greybox | The Sealed Vials plan |
@@ -555,7 +555,7 @@ Covered Lot and Sealed Vials are built in parallel, each by its own Claude Code 
 - **Checks before a merge:** `dotnet test` under tr-TR and under sv-SE, no build warnings, and `dotnet build clients/Playtest`. Before an engine phase is merged, a read-only review checks the change, and hand-made mutants of the new code each make the tests fail (Covered Lot plan, Appendix C new item 2).
 - **Shared parts:** PuzzleCore; the build files and the test setup; the golden pins; this file; the shared client package; the Unity editor version.
 - **Contracts (Q53):** every change to a shared part is small and additive, PuzzleCore included, and it is merged as soon as its checks pass. The exceptions:
-  - P3's removal of `ForUnknownCount` (Q5), the one exception approved with the plan. The Covered Lot session tells the Sealed Vials session before merging it;
+  - P3's removal of `ForUnknownCount` (Q5), the one exception approved with the plan. Done in Covered Lot's P3: with the user's approval it was merged without waiting for the note to the Sealed Vials session, since nothing on that session's branch used it. The note went to the user to pass on;
   - re-pins, and edits to this file, that the user approves.
 
   Any other contract change is raised with the user first.
