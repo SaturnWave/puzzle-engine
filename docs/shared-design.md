@@ -46,7 +46,7 @@ covered-lot/                           (Covered Lot's game repo, with its own Un
   Assets/SealedVials/  SealedVials.Client.asmdef    -> Shared.Client, PuzzleCore, PuzzleCore.Sort
 ```
 
-- **Layering:** `Sort` and `Jam` depend only on `PuzzleCore` and never on each other (nor would a later hybrid module). `Bot` references Core and Jam (P5); Sort is added when Sort's bots are built. `Validation` references Core and Jam (P6); Sort is added when the Sort module is built. `PuzzleMeta` depends on nothing in the engine, holds no rules and is never referenced by Core, Sort, Jam, Bot or Validation. `PuzzleClient` references PuzzleCore (P8). Nothing under `src/` (except the Cloud Code adapter) references UnityEngine or UGS. Enforce this with the `UnityBoundApiPolicy` and the architecture guard tests.
+- **Layering:** `Sort` and `Jam` depend only on `PuzzleCore` and never on each other (nor would a later hybrid module). `Bot` references Core and Jam (P5); Sort is added when Sort's bots are built. `Validation` references Core and Jam (P6); Sort is added when the Sort module is built. `Gen` (net10.0, never shipped) references Core and Jam (P4), and the CLI references Gen. `PuzzleMeta` depends on nothing in the engine, holds no rules and is never referenced by Core, Sort, Jam, Bot or Validation. `PuzzleClient` references PuzzleCore (P8). Nothing under `src/` (except the Cloud Code adapter) references UnityEngine or UGS. Enforce this with the `UnityBoundApiPolicy` and the architecture guard tests.
 - **Shared client package:** logic and plain building blocks only: the offer-screen logic, the analytics adapter, the game-session and day counters, input and the UI kit. Each game styles its own screens. The package has its own tests, which both Unity projects run. The first session to reach its Unity work creates it in the engine repo and names its folder; the other extends it additively (Covered Lot: P11).
 - **No extra runtime DLLs:** Core uses its own `ReadOnlyArray<T>` instead of `ImmutableArray<T>`, so `sync-engine.sh` does not have to stage System.Collections.Immutable for Unity.
 - **Portability:** the Cloud Code adapter is the only piece that depends on UGS. To move the server later, write a new adapter (for example an ASP.NET endpoint) around the same `IReplayValidator`.
@@ -147,8 +147,9 @@ public interface IPositionSolver<TState, TMove>   // each game supplies one (Jam
     SolveResult<TMove> SolveFrom(in TState state, NodeBudget budget);  // full information, from any position in play
 }
 
-// P4 (not in code yet): LevelGrade, PlanGrade and LevelKind. DeductionGrade and DeductionRung exist.
-public sealed record LevelGrade(PlanGrade Plan, Option<DeductionGrade> Deduction, LevelKind Kind);
+// Grades (PuzzleCore.Search; built in Covered Lot's P4, Q62-Q69). Only Graded levels ship, so a level's deduction is
+// Graded (Q65). LevelGrade refuses a Think level without a deduction grade and a Plan level with one (Q64).
+public sealed record LevelGrade(PlanGrade Plan, Option<DeductionGrade.Graded> Deduction, LevelKind Kind);
 public sealed record PlanGrade(MoveCount Par, PerMille DeadEnd, CapacityCount SpareNeed,
                                CapacityCount MinFreeCapacity, Option<CapacityCount> PeakPar);  // build with named arguments
 public abstract record DeductionGrade { private DeductionGrade() { }
@@ -156,7 +157,7 @@ public abstract record DeductionGrade { private DeductionGrade() { }
     public sealed record NeedsGuess : DeductionGrade;
     public sealed record BudgetExceeded(NodeCount NodesUsed) : DeductionGrade; }
 public enum DeductionRung { D1, D2, D3 }                                       // the one ladder: see the notes
-public enum LevelKind { Plan, Think }                                          // the sawtooth reads this
+public enum LevelKind { Plan, Think }      // the sawtooth reads this; Think = a clue level (Sort: sealed; Jam: covered)
 
 public abstract record NearMiss { private NearMiss() { }         // THE single definition; computed on Failed only
     public sealed record Yes(MoveCount MovesFromWin) : NearMiss;   // solver wins from TryWithOneSpare(final); Jam: vehicles left
@@ -279,7 +280,7 @@ public enum InvalidReason { IllegalMove, SpareOutsideFail, SecondSpare, RewindOu
   | `PeakPar` | Optional, in capacity units. Jam: `Some(lowest peak bay use over winning orders)`; Sort: `None`. `Par` always means path length |
   | `DeductionRung` | The level's hardest deduction step, on the deduction ladder below. A needed what-if case split = `NeedsGuess`, rejected |
 
-  Jam-only grader features (`GreedyWinPerMille`, branching, buried third, late-fail share) stay outside `PlanGrade`, in the CSV.
+  Jam-only grader features (`GreedyWinPerMille`, branching, buried third, late-fail share) stay outside `PlanGrade`, in the CSV. Branching and buried third go in `PuzzleCore.Gen`'s grading report, `{packId}.grades.csv` (Covered Lot's P4; defined in its brief, Q62, Q63); `GreedyWinPerMille` and the late-fail share come with the bots, in P5's `sim` CSV. `LevelKind` and `DeductionRung` names, like the mode and game names, come only from `ContractNames`.
 - **The deduction ladder (one text for both games; Q5, Q16, Q41, TC10).** Each brief gives examples in its own terms; the rungs are defined only here.
   - **D1:** one tag, with the ledger, fixes a hidden cell. Ledger completion is D1 too: once a colour's ledger count is used up by cells already fixed, that colour comes off every other hidden cell (Q41).
   - **D2:** two or more tags about one hidden cell are needed together (Q60).
@@ -308,7 +309,7 @@ public enum InvalidReason { IllegalMove, SpareOutsideFail, SecondSpare, RewindOu
   - Covered Lot: the player picks the cover, once per level. The engine checks the limit per attempt (`InsightLimit`), the client per level (Q28).
   - Both refusals take a per-game input. Whether they bind Sealed Vials is decided in the Sealed Vials session's grilling (Q39).
 - **Records:** `ActionRecord` contains:
-  - format `pc-record`, `formatVersion`, `game` (`Sort`/`Jam`), `mode` (the `PlayMode` name), level `{packId, levelId, fingerprint}` and `rulesVersion`. From P4 on, level ids have the form `{packId}-{slot:0000}` (TC14);
+  - format `pc-record`, `formatVersion`, `game` (`Sort`/`Jam`), `mode` (the `PlayMode` name), level `{packId, levelId, fingerprint}` and `rulesVersion`. A pack's level ids have the form `{packId}-{slot:0000}` (TC14), built by `LevelId.For`, which refuses an id over 64 characters. The reader still accepts any id of lowercase letters, digits and '-', so hand-made levels outside a pack's slots keep their own: the golden 6×6 records use `six-by-six` (Q66);
   - the actions `Move`, `Rewind(n)`, `TakeSpare`, `UseInsight(HiddenCell)` and `Concede`, each with `sincePreviousMs` stamped by the client. Illegal moves cost nothing and are never recorded.
 
   `Undo` is reserved: neither game emits it, and it can be added later by addition. The validator returns `Invalid(at, BoosterInCompetitiveMode)` for `TakeSpare`, `Rewind` or `UseInsight` outside Campaign. The reader and writer are PuzzleCore's `RecordJson` (`Records/RecordJson.cs`), modelled on the Block engine's Classic `RecordJson`. The format is a public contract: it changes only by addition, with a version bump.
@@ -319,6 +320,8 @@ public enum InvalidReason { IllegalMove, SpareOutsideFail, SecondSpare, RewindOu
   - A rejected slot is left out of the pack and listed in the pack's build report. Players see level numbers without gaps.
   - **`generatorVersion`:** version 1 is the generator as it stands at P7, after the ladder switch and with the novelty gate (Covered Lot plan, Appendix C change 3). From version 1 on, any change that alters generated content bumps it, and old versions are not kept runnable (Q29).
   - Grades go in a separate `{packId}.presentation.json` with each level's grade fields. Players see no tiers or labels until the difficulty pass (TC11).
+    - **Format** (`PuzzleCore.Packs`, built in Covered Lot's P4, Q67): `pc-presentation`, `formatVersion` 1, `game`, `packId`, then `levels` in strictly ascending slot order. Each level has its `levelId`, `slot` and `fingerprint`, its `kind`, its `plan` (the five `PlanGrade` fields) and, on Think levels only, its `deduction` (`rung`, `steps`).
+    - It is canonical JSON, read as strictly as `pc-record`. An absent value is left out, never written as null: Plan levels have no `deduction`, and a Sort grade has no `peakPar`. It has no tier or label fields until the difficulty pass.
   - **Pins:** the covered-levels pin (P3, re-pinned once) and the golden pack pin: the SHA-256 of the canonical pack for `golden-gen` slots 0-99, plain and covered, with the presentation file pinned separately. Today's plain golden hash stays pinned (Q30, TC14).
 - **Events:** golden replays compare the `PuzzleEvent` sequence, the outcome and the final `ExactKey` of a valid record, and the `Invalid` action index and reason of a record kept to be refused (§4).
 - **Server cost:** the validator replays the moves, which costs time linear in the move count. It never solves the board again.
@@ -339,6 +342,7 @@ public enum InvalidReason { IllegalMove, SpareOutsideFail, SecondSpare, RewindOu
 | Test | Checks |
 |---|---|
 | Golden replays | The golden replay tests pin each committed `pc-record`'s expected verdict; the files carry none. A valid record reproduces the same `PuzzleEvent` sequence, outcome and final `ExactKey`; a record kept to be refused gives the same `Invalid` action index and reason (Jam's `six-by-six-rewind-across-reveal`: action 4, `RewindOutOfRange`). They also run in Unity's `EngineSmokeTest`, which lists the same expected verdicts |
+| Grades | Each `PlanGrade` field and the `LevelKind` of a built level; `LevelGrade`'s kind rule; the presentation file's canonical text, round trip and strict reader; each grading-report column (Covered Lot P4) |
 | Golden generator packs | The golden pack pin: the SHA-256 of the canonical pack for `golden-gen` slots 0-99, plain and covered, per `generatorVersion`, including the try schedule; the presentation file is pinned separately, and today's plain golden hash stays. The covered-levels pin. Re-pinned only with the user's approval (Q30) |
 | Apply/rewind property | For random legal move sequences, `Rewind(n)` returns the exact earlier `ExactKey`, no accepted rewind crosses the last reveal, and the `SeenSet` only grows within the attempt. `TryApply` never mutates its input |
 | Key split | Sort: permuting identical vials changes `ExactKey` but not `CanonicalKey`. Jam: the same exited set with a different slot order shares the `CanonicalKey` and differs in `ExactKey` |
@@ -533,7 +537,7 @@ What changed:
 | Records, `PuzzleEvent` and replay | A hand-written record replays to `Valid(Won)`; golden replays pass | Met before the plans. The validator project: Covered Lot P6 |
 | Solver and `bench` | Solver ⇔ validator test passes; p50/p99 solve times recorded at 8×8 | "The solver and the validator agree": Covered Lot P6. Solve times at 8×8: P9 |
 | Jam plain generator and pack writer | `gen` makes 1,000 plain levels, all `Solved` under `validate`, with zero loader rejects; generation rate recorded | Pack writer: Covered Lot P7. The 1,000-level gate run and the generation rate: P9 |
-| Near miss, spare limit, rewind reach, fail offer, grades, playouts, fail cause | Offer-eligibility, near-miss-soundness and spare-limit tests pass | Met before the plans. `FailCause`: met in Covered Lot's P2. Grades: P4 |
+| Near miss, spare limit, rewind reach, fail offer, grades, playouts, fail cause | Offer-eligibility, near-miss-soundness and spare-limit tests pass | Met before the plans. `FailCause`: met in Covered Lot's P2. Grades: met in Covered Lot's P4 |
 | Testers and default budgets | Tester list; budgets set | Default budgets: Covered Lot P9. Testers: P12 (greybox) and P15 (closed test) |
 | Jam clue layer, bots, engineering gate and greybox pack | Covered levels `Unique` and `Graded`; engineering gate passes; first calibration table | Clue layer: met before the plans; each covered slot at its exact rung: met in Covered Lot's P3. First calibration table: P5. Engineering gate: P9. Greybox pack: P12 |
 | Sort Stage 0, plain core and generator | Sort golden rule, solver ⇔ validator and golden pack tests pass; 1,000 plain levels `Solved` | The Sealed Vials plan |
@@ -574,7 +578,7 @@ Covered Lot and Sealed Vials are built in parallel, each by its own Claude Code 
 | The rewind fence for Covered Lot (`JamRules.RewindFence` = `AtReveal`) | Covered Lot session | P1 (delivered) | `Attempt` already applies `AtReveal` for a game that names it. Sort names it, and adds `LayerRevealed` to the reveals `Attempt` sees, with its events |
 | `FailCause`, next to `FailAnalysis`, and `losing_move_back` in `fail_detail` | Covered Lot session | P2 (delivered) | `FailAnalysis.CauseOf`, `FailCause` and `IHiddenMoveCheck` are in PuzzleCore. Each game supplies its own position solver and `IHiddenMoveCheck` (TC1); Sort's follows its label in §2 once its session settles it |
 | The deduction ladder in code: `LotClues` switched; `ForUnknownCount` and the third definition removed | Covered Lot session | P3 (delivered) | `LotClues` grades on the §2 ladder, steps included (Q57–Q61), and the covered sample is re-pinned. `DeductionRung` points to §2 and `DeductionRungs.ForUnknownCount` is gone. A Sort grader follows §2's text, steps included |
-| Grades: `PlanGrade`, `LevelGrade`, `LevelKind`, the presentation file, level ids `{packId}-{slot:0000}` | Covered Lot session | P4 | Only `DeductionGrade` and `DeductionRung` exist |
+| Grades: `PlanGrade`, `LevelGrade`, `LevelKind`, the presentation file, level ids `{packId}-{slot:0000}` | Covered Lot session | P4 (delivered) | `PlanGrade`, `LevelGrade` and `LevelKind` are in `PuzzleCore.Search`, with fixed names in `ContractNames`; `LevelId.For` builds slot ids; `PuzzleCore.Packs` writes and reads the presentation file. A Sort level is a Think level when it has sealed vials, and its grade has no `PeakPar` |
 | `PuzzleCore.Bot`, `IBotProfile` and `sim` | Covered Lot session | P5 | No bot code exists. Sort's profiles and bots are the Sealed Vials session's, added to the project additively |
 | `PuzzleCore.Validation` (`IReplayValidator`), `InsightUnavailable`, the hidden-cell interface and `validate` | Covered Lot session | P6 | The interface is optional, so Sort's rules keep compiling without it (TC6). Whether the Insight refusals bind Sealed Vials is decided in its grilling |
 | The JSON pack container, `generatorVersion`, the pack writer in `PuzzleCore.Gen` and the golden pack pin | Covered Lot session | P7 | Jam levels come from `LotPackBuilder` and `pc-lot` files. Sort uses the container once it is on `master` (Q29) |
