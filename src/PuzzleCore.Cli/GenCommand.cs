@@ -1,18 +1,21 @@
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using PuzzleCore.Gen;
 using PuzzleCore.Jam;
 using PuzzleCore.Randomness;
+using PuzzleCore.Records;
 using PuzzleCore.Search;
 
 namespace PuzzleCore.Cli
 {
     /// <summary>
-    /// "gen &lt;packId&gt; &lt;count&gt; [outDir]": builds campaign slots 0..count-1 of a pack through
-    /// <see cref="LotPackBuilder"/> and prints one line per level: size, vehicles, bays, PeakPar, slack,
-    /// the random-play fail rate, the greedy-habit win rate and, on covered levels, covers, tags and the
-    /// deduction grade. With outDir it writes each level as &lt;outDir&gt;/&lt;index&gt;.pc-lot.
-    /// Exit code 1 if any slot was rejected.
+    /// "gen &lt;packId&gt; &lt;count&gt; [outDir]": builds and grades campaign slots 0..count-1 of a pack through
+    /// <see cref="LotGrading"/> and prints one line per slot: size, vehicles, bays, PeakPar, slack, the random-play fail
+    /// rate (DeadEnd), the greedy-habit win rate and, on covered levels, covers, tags and the deduction grade. With
+    /// outDir it writes &lt;levelId&gt;.pc-lot for each level, then &lt;packId&gt;.presentation.json and
+    /// &lt;packId&gt;.grades.csv (<see cref="LotPackFiles"/>). Exit code 1 if any slot was rejected.
     /// </summary>
     internal static class GenCommand
     {
@@ -26,31 +29,35 @@ namespace PuzzleCore.Cli
                 return 2;
             }
 
-            if (outDirectory is not null)
+            // Ids grow with the slot's digits, so the last slot's id is the longest.
+            bool hasRoomForIds = count == 0 || LevelId.For(pack, new LevelIndex(count - 1)).HasValue;
+            if (!hasRoomForIds)
             {
-                Directory.CreateDirectory(outDirectory);
+                output.Write("the pack id is too long: level ids {packId}-{slot:0000} have at most 64 characters\n");
+                return 2;
             }
 
+            var graded = new List<GradedLot>();
             int rejected = 0;
             Stopwatch clock = Stopwatch.StartNew();
             for (int index = 0; index < count; index++)
             {
-                var slot = new LevelIndex(index);
-                switch (LotPackBuilder.Build(pack, slot))
+                switch (LotGrading.Grade(pack, new LevelIndex(index)))
                 {
-                    case BuildResult.Built built:
-                        output.Write(Line(index, built.Level, pack, slot));
-                        if (outDirectory is not null)
-                        {
-                            File.WriteAllText(Path.Combine(outDirectory, Number(index).PadLeft(4, '0') + ".pc-lot"), LotText.Write(built.Level.Level));
-                        }
-
+                    case LotGradeResult.Graded result:
+                        graded.Add(result.Lot);
+                        output.Write(Line(result.Lot, pack));
                         break;
-                    case BuildResult.Rejected failed:
+                    case LotGradeResult.Rejected failed:
                         rejected++;
                         output.Write(Number(index).PadLeft(4) + "  REJECTED  " + failed.Reason.ToString() + "\n");
                         break;
                 }
+            }
+
+            if (outDirectory is not null)
+            {
+                LotPackFiles.Write(new GradedLotPack(pack, graded), outDirectory);
             }
 
             output.Write(string.Concat(
@@ -59,19 +66,19 @@ namespace PuzzleCore.Cli
             return rejected == 0 ? 0 : 1;
         }
 
-        private static string Line(int index, BuiltLevel built, PackId pack, LevelIndex slot)
+        private static string Line(GradedLot lot, PackId pack)
         {
-            LotLevel level = built.Level;
+            LotLevel level = lot.Built.Level;
             string line = string.Concat(
-                Number(index).PadLeft(4), "  ", level.Size.ToString(), "  n=", Number(level.VehicleCount),
-                "  bays=", level.Bays.ToString(), "  par=", built.PeakPar.ToString(), "  slack=", Number(built.Slack),
-                "  randomFail=", Number(LotPlayouts.DeadEnd(level, pack, slot, LotPlayouts.DefaultPlayouts).Value / 10), "%",
-                "  greedyWin=", Number(LotPlayouts.GreedyWins(level, pack, slot, GreedyPlayouts).Value / 10), "%");
-            if (built.Deduction.TryGet(out DeductionGrade.Graded? grade))
+                Number(lot.Slot.Value).PadLeft(4), "  ", level.Size.ToString(), "  n=", Number(level.VehicleCount),
+                "  bays=", level.Bays.ToString(), "  peakPar=", lot.Built.PeakPar.ToString(), "  slack=", Number(lot.Built.Slack),
+                "  randomFail=", Number(lot.Grade.Plan.DeadEnd.Value / 10), "%",
+                "  greedyWin=", Number(LotPlayouts.GreedyWins(level, pack, lot.Slot, GreedyPlayouts).Value / 10), "%");
+            if (lot.Grade.Deduction.TryGet(out DeductionGrade.Graded? grade))
             {
                 line += string.Concat(
                     "  COVERED covers=", Number(new LotClues(level).HiddenCells.Count), " tags=", Number(level.Clues.Count),
-                    " rung=", grade.Rung.ToString(), " steps=", grade.Steps.ToString());
+                    " rung=", ContractNames.Of(grade.Rung), " steps=", grade.Steps.ToString());
             }
 
             return line + "\n";
