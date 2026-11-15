@@ -43,14 +43,36 @@ namespace PuzzleCore.Tests.Core
         [Fact]
         public void A_game_without_a_peak_par_writes_none_and_reads_back_without_one()
         {
-            var sort = new PresentationFile(GameKind.Sort, Pack, ReadOnlyArray.Of(
-                Level(7, PlainPrint, new LevelGrade(PlanOf(par: 20, deadEnd: 500, minFreeCapacity: 0, peakPar: Option.None<CapacityCount>()), Option.None<DeductionGrade.Graded>(), LevelKind.Plan))));
+            PresentationFile sort = SortFile();
 
             string text = PresentationJson.Write(sort);
 
             Assert.DoesNotContain("peakPar", text, StringComparison.Ordinal);
             Assert.DoesNotContain("null", text, StringComparison.Ordinal);
             Assert.Equal(new PresentationReadResult.Read(sort), PresentationJson.Read(text));
+        }
+
+        [Fact]
+        public void A_sort_level_with_a_peak_par_is_invalid()
+        {
+            string text = PresentationJson.Write(SortFile()).Replace("\"par\":20,", "\"par\":20,\"peakPar\":3,", StringComparison.Ordinal);
+
+            Assert.Equal(new[] { "$.levels[0].plan.peakPar: a Sort level has no peak par" }, Problems(text));
+        }
+
+        /// <summary>shared-design.md §2, "Grade fields": a Jam grade has a PeakPar, a Sort grade never.</summary>
+        [Fact]
+        public void A_presentation_file_refuses_a_jam_level_without_a_peak_par_and_a_sort_level_with_one()
+        {
+            PresentationLevel jamLevel = JamFile().Levels[0];
+            PresentationLevel sortLevel = SortFile().Levels[0];
+            PresentationLevel jamWithout = jamLevel with { Grade = WithPeakPar(jamLevel.Grade, Option.None<CapacityCount>()) };
+            PresentationLevel sortWith = sortLevel with { Grade = WithPeakPar(sortLevel.Grade, Option.Some(new CapacityCount(3))) };
+
+            Assert.Throws<ArgumentException>(() => new PresentationFile(GameKind.Jam, Pack, ReadOnlyArray.Of(jamWithout)));
+            Assert.Throws<ArgumentException>(() => new PresentationFile(GameKind.Sort, Pack, ReadOnlyArray.Of(sortWith)));
+            Assert.Equal((false, true), (PresentationFile.HasPeakPar(GameKind.Sort), PresentationFile.HasPeakPar(GameKind.Jam)));
+            Assert.Throws<ArgumentOutOfRangeException>(() => PresentationFile.HasPeakPar((GameKind)2));
         }
 
         [Fact]
@@ -75,6 +97,7 @@ namespace PuzzleCore.Tests.Core
         [InlineData("\"minFreeCapacity\":2", "\"minFreeCapacity\":-1", "$.levels[0].plan.minFreeCapacity: -1 is outside 0..2147483647")]
         [InlineData("\"peakPar\":3", "\"peakPar\":-1", "$.levels[0].plan.peakPar: -1 is outside 0..2147483647")]
         [InlineData("\"peakPar\":3", "\"peakPar\":null", "$.levels[0].plan.peakPar: expected an integer, found null")]
+        [InlineData("\"peakPar\":3,", "", "$.levels[0].plan.peakPar: a Jam level needs a peak par")]
         [InlineData("\"kind\":\"Plan\"", "\"kind\":\"plan\"", "$.levels[0].kind: unknown level kind")]
         [InlineData("\"deduction\":{\"rung\":\"D2\",\"steps\":3},", "", "$.levels[1].deduction: a Think level needs a deduction grade")]
         [InlineData("\"kind\":\"Think\"", "\"kind\":\"Plan\"", "$.levels[1].deduction: a Plan level has no deduction grade")]
@@ -199,6 +222,16 @@ namespace PuzzleCore.Tests.Core
                 PlanOf(par: 15, deadEnd: 892, minFreeCapacity: 1, peakPar: Option.Some(new CapacityCount(4))),
                 Option.Some(new DeductionGrade.Graded(DeductionRung.D2, new StepCount(3))),
                 LevelKind.Think))));
+
+        /// <summary>A Sort pack of one plain level at slot 7, without a peak par.</summary>
+        private static PresentationFile SortFile() => new(GameKind.Sort, Pack, ReadOnlyArray.Of(
+            Level(7, PlainPrint, new LevelGrade(
+                PlanOf(par: 20, deadEnd: 500, minFreeCapacity: 0, peakPar: Option.None<CapacityCount>()),
+                Option.None<DeductionGrade.Graded>(),
+                LevelKind.Plan))));
+
+        private static LevelGrade WithPeakPar(LevelGrade grade, Option<CapacityCount> peakPar) =>
+            new(grade.Plan with { PeakPar = peakPar }, grade.Deduction, grade.Kind);
 
         private static PresentationLevel Level(int slot, string fingerprint, LevelGrade grade)
         {

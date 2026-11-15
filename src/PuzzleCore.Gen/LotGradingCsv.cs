@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 using System.Linq;
 using System.Text;
@@ -10,8 +11,8 @@ namespace PuzzleCore.Gen
     /// <summary>
     /// The grading report, {packId}.grades.csv (Q68): a header line, then one line per graded level in slot order. The
     /// fields are level ids, contract names and invariant integers, so none ever needs quoting. Rung and steps are
-    /// empty on Plan levels, and peak_par is empty for a grade without one. Every line ends with '\n'. The greedy win
-    /// rate and the late-fail share come with the bots, in P5's sim CSV.
+    /// empty on Plan levels. Every line ends with '\n'. The greedy win rate and the late-fail share come with the
+    /// bots, in P5's sim CSV.
     /// </summary>
     public static class LotGradingCsv
     {
@@ -53,7 +54,9 @@ namespace PuzzleCore.Gen
                 Number(level.VehicleCount),
                 Number(ColoursOf(level)),
                 Number(level.Bays.Value),
-                plan.PeakPar.TryGet(out CapacityCount peakPar) ? Number(peakPar.Value) : string.Empty,
+                plan.PeakPar.TryGet(out CapacityCount peakPar)
+                    ? Number(peakPar.Value)
+                    : throw new InvalidOperationException("A Jam level always has a peak par: the pack's presentation file refuses one without."),
                 Number(plan.MinFreeCapacity.Value),
                 Number(plan.SpareNeed.Value),
                 Number(plan.Par.Value),

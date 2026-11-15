@@ -16,10 +16,10 @@ namespace PuzzleCore.Packs
     ///                 "deduction": { "rung": "D1", "steps": 2 } } ]
     /// }
     /// </code>
-    /// An absent value is left out, never written as null: a Plan level has no "deduction", and a game without a peak
-    /// par (Sort) has no "peakPar". Names come from <see cref="ContractNames"/>. Writing gives the canonical text
-    /// (<see cref="JsonWriter"/>). Reading is strict, like <see cref="RecordJson"/>: unknown fields, bad values and
-    /// levels that break the <see cref="PresentationFile"/> rules are reported with their JSON paths.
+    /// An absent value is left out, never written as null: a Plan level has no "deduction", and a Sort level no
+    /// "peakPar", which a Jam level always has. Names come from <see cref="ContractNames"/>. Writing gives the canonical
+    /// text (<see cref="JsonWriter"/>). Reading is strict, like <see cref="RecordJson"/>: unknown fields, bad values
+    /// and levels that break the <see cref="PresentationFile"/> rules are reported with their JSON paths.
     /// </summary>
     public static class PresentationJson
     {
@@ -85,7 +85,7 @@ namespace PuzzleCore.Packs
                 root.Report("packId", "expected lowercase letters, digits and '-'");
             }
 
-            ReadOnlyArray<PresentationLevel> levels = ReadLevels(root, pack, problems);
+            ReadOnlyArray<PresentationLevel> levels = ReadLevels(root, game, pack, problems);
             root.RejectUnknownFields();
             bool hasGame = game.TryGet(out GameKind gameKind);
             bool hasPack = pack.TryGet(out PackId packId);
@@ -138,14 +138,14 @@ namespace PuzzleCore.Packs
             new JsonMember("steps", new JsonInteger(deduction.Steps.Value)),
         });
 
-        private static ReadOnlyArray<PresentationLevel> ReadLevels(JsonFields root, Option<PackId> pack, List<FileProblem> problems)
+        private static ReadOnlyArray<PresentationLevel> ReadLevels(JsonFields root, Option<GameKind> game, Option<PackId> pack, List<FileProblem> problems)
         {
             var levels = new List<PresentationLevel>();
             JsonArray? array = root.RequiredArray("levels");
             for (int index = 0; array is not null && index < array.Items.Count; index++)
             {
                 JsonFields? fields = JsonFields.Of(array.Items[index], JsonPath.Index(root.PathOf("levels"), index), problems);
-                if (fields is not null && ReadLevel(fields, problems).TryGet(out PresentationLevel? level))
+                if (fields is not null && ReadLevel(fields, game, problems).TryGet(out PresentationLevel? level))
                 {
                     CheckPlaceInPack(fields, level, pack, levels);
                     levels.Add(level);
@@ -155,12 +155,12 @@ namespace PuzzleCore.Packs
             return ReadOnlyArray.CopyOf(levels);
         }
 
-        private static Option<PresentationLevel> ReadLevel(JsonFields fields, List<FileProblem> problems)
+        private static Option<PresentationLevel> ReadLevel(JsonFields fields, Option<GameKind> game, List<FileProblem> problems)
         {
             Option<LevelId> id = LevelId.Parse(fields.RequiredString("levelId") ?? string.Empty);
             long? slot = fields.RequiredInteger("slot", 0, int.MaxValue);
             Option<LevelFingerprint> fingerprint = LevelFingerprint.Parse(fields.RequiredString("fingerprint") ?? string.Empty);
-            Option<LevelGrade> grade = ReadGrade(fields, problems);
+            Option<LevelGrade> grade = ReadGrade(fields, game, problems);
             fields.RejectUnknownFields();
             if (!id.TryGet(out LevelId levelId))
             {
@@ -178,10 +178,10 @@ namespace PuzzleCore.Packs
         }
 
         /// <summary>The kind, the plan grade and the deduction grade, which a Think level needs and a Plan level never has.</summary>
-        private static Option<LevelGrade> ReadGrade(JsonFields fields, List<FileProblem> problems)
+        private static Option<LevelGrade> ReadGrade(JsonFields fields, Option<GameKind> game, List<FileProblem> problems)
         {
             Option<LevelKind> kind = ContractNames.KindNamed(fields.RequiredString("kind") ?? string.Empty);
-            Option<PlanGrade> plan = ReadPlan(fields.RequiredObject("plan"));
+            Option<PlanGrade> plan = ReadPlan(fields.RequiredObject("plan"), game);
             JsonValue? deductionJson = fields.Optional("deduction");
             Option<DeductionGrade.Graded> deduction = deductionJson is null
                 ? Option.None<DeductionGrade.Graded>()
@@ -205,7 +205,8 @@ namespace PuzzleCore.Packs
                 : Option.None<LevelGrade>();
         }
 
-        private static Option<PlanGrade> ReadPlan(JsonFields? fields)
+        /// <summary>The five plan fields. A Jam level has a peak par and a Sort level none; with an unknown game, already reported, that is not checked.</summary>
+        private static Option<PlanGrade> ReadPlan(JsonFields? fields, Option<GameKind> game)
         {
             if (fields is null)
             {
@@ -219,6 +220,11 @@ namespace PuzzleCore.Packs
             JsonValue? peakParJson = fields.Optional("peakPar");
             long? peakPar = peakParJson is null ? null : fields.AsInteger(peakParJson, fields.PathOf("peakPar"), 0, int.MaxValue);
             fields.RejectUnknownFields();
+            if (game.TryGet(out GameKind gameKind) && (peakParJson is not null) != PresentationFile.HasPeakPar(gameKind))
+            {
+                fields.Report("peakPar", gameKind == GameKind.Jam ? "a Jam level needs a peak par" : "a Sort level has no peak par");
+                return Option.None<PlanGrade>();
+            }
 
             // Any missing or bad field has been reported; a present but bad peakPar too.
             if (par is null || deadEnd is null || spareNeed is null || minFreeCapacity is null || (peakParJson is not null && peakPar is null))

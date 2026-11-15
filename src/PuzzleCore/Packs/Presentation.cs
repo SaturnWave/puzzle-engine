@@ -14,7 +14,8 @@ namespace PuzzleCore.Packs
     /// pack so a changed grade never makes a record unverifiable (Q29, TC11). Players see no tiers or labels from it
     /// until the difficulty pass. The game is Sort or Jam and the pack id is set. The levels are in strictly
     /// ascending slot order, each level's id is the one <see cref="LevelId.For"/> gives for its slot, and each level
-    /// has a fingerprint, so <see cref="PresentationJson.Write"/> can write every file this constructor accepts.
+    /// has a fingerprint, so <see cref="PresentationJson.Write"/> can write every file this constructor accepts. A Jam
+    /// level has a peak par and a Sort level none (<see cref="HasPeakPar"/>).
     /// </summary>
     public sealed record PresentationFile
     {
@@ -47,12 +48,25 @@ namespace PuzzleCore.Packs
                 {
                     throw new ArgumentException("Every level has the fingerprint of its text.", nameof(levels));
                 }
+
+                if (level.Grade.Plan.PeakPar.HasValue != HasPeakPar(game))
+                {
+                    throw new ArgumentException("A Jam level has a peak par and a Sort level none.", nameof(levels));
+                }
             }
 
             Game = game;
             Pack = pack;
             Levels = levels;
         }
+
+        /// <summary>Whether this game's levels have a peak par (shared-design.md §2, "Grade fields"): Jam's do, Sort's never.</summary>
+        public static bool HasPeakPar(GameKind game) => game switch
+        {
+            GameKind.Sort => false,
+            GameKind.Jam => true,
+            _ => throw new ArgumentOutOfRangeException(nameof(game), game, "Unknown game."),
+        };
 
         public GameKind Game { get; }
 

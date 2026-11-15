@@ -6,6 +6,7 @@ using PuzzleCore.Gen;
 using PuzzleCore.Jam;
 using PuzzleCore.Packs;
 using PuzzleCore.Records;
+using PuzzleCore.Search;
 using Xunit;
 using static PuzzleCore.Tests.Jam.Boards;
 
@@ -52,6 +53,17 @@ namespace PuzzleCore.Tests.Gen
         {
             GradedLot[] levels = HandMadeGrades.Graded().Levels.ToArray();
             levels[1] = levels[1] with { Fingerprint = levels[0].Fingerprint };
+
+            Assert.Throws<ArgumentException>(() => new GradedLotPack(HandMadeGrades.TestPack, levels));
+        }
+
+        /// <summary>A Jam grade always has a peak par, so the report never has an empty peak_par.</summary>
+        [Fact]
+        public void A_graded_pack_refuses_a_level_whose_grade_has_no_peak_par()
+        {
+            GradedLot[] levels = HandMadeGrades.Graded().Levels.ToArray();
+            LevelGrade grade = levels[0].Grade;
+            levels[0] = levels[0] with { Grade = new LevelGrade(grade.Plan with { PeakPar = Option.None<CapacityCount>() }, grade.Deduction, grade.Kind) };
 
             Assert.Throws<ArgumentException>(() => new GradedLotPack(HandMadeGrades.TestPack, levels));
         }
