@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using PuzzleCore.Randomness;
+using PuzzleCore.Search;
 
 namespace PuzzleCore.Records
 {
@@ -22,7 +23,10 @@ namespace PuzzleCore.Records
         Jam,
     }
 
-    /// <summary>The fixed contract names of modes and games. Never use the enum's ToString or ordinal.</summary>
+    /// <summary>
+    /// The fixed contract names of modes, games, level kinds and deduction rungs (records, presentation files,
+    /// reports). Never use the enum's ToString or ordinal.
+    /// </summary>
     public static class ContractNames
     {
         public static string Of(PlayMode mode) => mode switch
@@ -41,6 +45,21 @@ namespace PuzzleCore.Records
             GameKind.Sort => "Sort",
             GameKind.Jam => "Jam",
             _ => throw new ArgumentOutOfRangeException(nameof(game), game, "Unknown game."),
+        };
+
+        public static string Of(LevelKind kind) => kind switch
+        {
+            LevelKind.Plan => "Plan",
+            LevelKind.Think => "Think",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown level kind."),
+        };
+
+        public static string Of(DeductionRung rung) => rung switch
+        {
+            DeductionRung.D1 => "D1",
+            DeductionRung.D2 => "D2",
+            DeductionRung.D3 => "D3",
+            _ => throw new ArgumentOutOfRangeException(nameof(rung), rung, "Unknown deduction rung."),
         };
 
         public static Option<PlayMode> ModeNamed(string name)
@@ -67,6 +86,32 @@ namespace PuzzleCore.Records
             }
 
             return Option.None<GameKind>();
+        }
+
+        public static Option<LevelKind> KindNamed(string name)
+        {
+            foreach (LevelKind kind in new[] { LevelKind.Plan, LevelKind.Think })
+            {
+                if (string.Equals(Of(kind), name, StringComparison.Ordinal))
+                {
+                    return Option.Some(kind);
+                }
+            }
+
+            return Option.None<LevelKind>();
+        }
+
+        public static Option<DeductionRung> RungNamed(string name)
+        {
+            foreach (DeductionRung rung in new[] { DeductionRung.D1, DeductionRung.D2, DeductionRung.D3 })
+            {
+                if (string.Equals(Of(rung), name, StringComparison.Ordinal))
+                {
+                    return Option.Some(rung);
+                }
+            }
+
+            return Option.None<DeductionRung>();
         }
     }
 
@@ -98,7 +143,11 @@ namespace PuzzleCore.Records
         public static bool operator !=(ElapsedMs left, ElapsedMs right) => !left.Equals(right);
     }
 
-    /// <summary>A level id inside its pack: lowercase ASCII letters, digits and '-', 1-64 characters.</summary>
+    /// <summary>
+    /// A level id inside its pack: lowercase ASCII letters, digits and '-', 1-64 characters. A pack's levels have the
+    /// id <see cref="For"/> gives (TC14); hand-made levels outside a pack's slots, such as the golden 6×6 board
+    /// ("six-by-six"), keep their own (Q66).
+    /// </summary>
     public readonly struct LevelId : IEquatable<LevelId>
     {
         private LevelId(string value) => Value = value;
@@ -107,6 +156,16 @@ namespace PuzzleCore.Records
 
         public static Option<LevelId> Parse(string text) =>
             PackId.Parse(text).HasValue ? Option.Some(new LevelId(text)) : Option.None<LevelId>();
+
+        /// <summary>
+        /// The id of a pack's slot, "{packId}-{slot:0000}", for example "campaign-jam-0024": the slot has at least
+        /// four digits, and more from slot 10000. None when the id would be longer than 64 characters, or the pack id
+        /// is the empty default value.
+        /// </summary>
+        public static Option<LevelId> For(PackId pack, LevelIndex slot) =>
+            pack == default
+                ? Option.None<LevelId>()
+                : Parse(string.Concat(pack.Value, "-", slot.Value.ToString("0000", CultureInfo.InvariantCulture)));
 
         public bool Equals(LevelId other) => string.Equals(Value, other.Value, StringComparison.Ordinal);
 
