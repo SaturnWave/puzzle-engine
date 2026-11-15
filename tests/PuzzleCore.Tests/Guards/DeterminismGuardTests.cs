@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using PuzzleCore.Tests.Support;
 using Xunit;
@@ -45,6 +46,19 @@ namespace PuzzleCore.Tests.Guards
             IReadOnlyList<Violation> violations = inspection.ApiPolicyViolations(UnityBoundApiPolicy.Default);
 
             Assert.True(violations.Count == 0, Report(assemblyName, violations));
+        }
+
+        [Fact]
+        public void The_offline_writer_builds_its_text_without_culture_dependent_members()
+        {
+            // Gen's files (the grading report, and the presentation file that P7 pins) are compared byte for byte, so
+            // the member bans apply to it as well; every platform type stays allowed, files and the clock included.
+            const string Gen = "PuzzleCore.Gen";
+            using var inspection = new AssemblyInspection(Path.Combine(AppContext.BaseDirectory, ProjectRules.AssemblyFileName(Gen)));
+
+            IReadOnlyList<Violation> violations = inspection.ApiPolicyViolations(MemberBansPolicy.Default);
+
+            Assert.True(violations.Count == 0, Report(Gen, violations));
         }
 
         [Theory]

@@ -17,7 +17,8 @@ namespace PuzzleCore.Tests.Support
             {
                 ["PuzzleCore"] = Array.Empty<string>(),
                 ["PuzzleCore.Jam"] = new[] { "PuzzleCore" },
-                ["PuzzleCore.Cli"] = new[] { "PuzzleCore", "PuzzleCore.Jam" },
+                ["PuzzleCore.Gen"] = new[] { "PuzzleCore", "PuzzleCore.Jam" },
+                ["PuzzleCore.Cli"] = new[] { "PuzzleCore", "PuzzleCore.Jam", "PuzzleCore.Gen" },
             };
 
         /// <summary>The compiled file of each project.</summary>

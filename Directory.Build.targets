@@ -18,7 +18,8 @@
 
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PuzzleCore'"><PuzzleLayeringKnown>true</PuzzleLayeringKnown><PuzzleAllowedProjectReferences></PuzzleAllowedProjectReferences></PropertyGroup>
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PuzzleCore.Jam'"><PuzzleLayeringKnown>true</PuzzleLayeringKnown><PuzzleAllowedProjectReferences>PuzzleCore</PuzzleAllowedProjectReferences></PropertyGroup>
-  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PuzzleCore.Cli'"><PuzzleLayeringKnown>true</PuzzleLayeringKnown><PuzzleAllowedProjectReferences>PuzzleCore;PuzzleCore.Jam</PuzzleAllowedProjectReferences></PropertyGroup>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PuzzleCore.Gen'"><PuzzleLayeringKnown>true</PuzzleLayeringKnown><PuzzleAllowedProjectReferences>PuzzleCore;PuzzleCore.Jam</PuzzleAllowedProjectReferences></PropertyGroup>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PuzzleCore.Cli'"><PuzzleLayeringKnown>true</PuzzleLayeringKnown><PuzzleAllowedProjectReferences>PuzzleCore;PuzzleCore.Jam;PuzzleCore.Gen</PuzzleAllowedProjectReferences></PropertyGroup>
 
   <Target Name="PuzzleGuardProjectRules" BeforeTargets="CoreCompile">
     <ItemGroup>

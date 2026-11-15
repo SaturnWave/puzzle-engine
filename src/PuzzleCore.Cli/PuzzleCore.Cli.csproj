@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Command line: demo (text renderer), and later gen / validate / sim / bench / replay. -->
+  <!-- Command line: demo (text renderer), replay, gen and rungs; later validate / sim / bench. -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>PuzzleCore.Cli</RootNamespace>
@@ -8,5 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="..\PuzzleCore\PuzzleCore.csproj" />
     <ProjectReference Include="..\PuzzleCore.Jam\PuzzleCore.Jam.csproj" />
+    <ProjectReference Include="..\PuzzleCore.Gen\PuzzleCore.Gen.csproj" />
   </ItemGroup>
 </Project>
