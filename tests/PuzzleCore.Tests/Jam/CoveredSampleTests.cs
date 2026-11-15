@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using PuzzleCore.Jam;
 using PuzzleCore.Randomness;
+using PuzzleCore.Records;
 using PuzzleCore.Search;
 using Xunit;
 
@@ -71,7 +72,7 @@ namespace PuzzleCore.Tests.Jam
                     var slot = new LevelIndex(index);
                     if (LotContentPlan.CoversFor(slot).TryGet(out CoverPlan? plan))
                     {
-                        string head = packText + " " + index.ToString("0000", CultureInfo.InvariantCulture) + " " + plan.Rung.ToString();
+                        string head = packText + " " + index.ToString("0000", CultureInfo.InvariantCulture) + " " + ContractNames.Of(plan.Rung);
                         lines.Add(head + " " + Outcome(LotPackBuilder.Build(pack, slot)));
                     }
                 }
@@ -83,7 +84,7 @@ namespace PuzzleCore.Tests.Jam
         private static string Outcome(BuildResult result) => result switch
         {
             BuildResult.Built built when built.Level.Deduction.TryGet(out DeductionGrade.Graded? grade) => string.Concat(
-                "built ", grade.Rung.ToString(), " ", grade.Steps.Value.ToString(CultureInfo.InvariantCulture), " ", LotText.Fingerprint(built.Level.Level)),
+                "built ", ContractNames.Of(grade.Rung), " ", grade.Steps.Value.ToString(CultureInfo.InvariantCulture), " ", LotText.Fingerprint(built.Level.Level)),
             BuildResult.Rejected rejected => "REJECTED " + rejected.Reason.ToString(),
             _ => throw new InvalidOperationException("A covered slot built without a deduction grade."),
         };

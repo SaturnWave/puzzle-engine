@@ -32,12 +32,18 @@ namespace PuzzleCore.Tests.Gen
             Assert.Equal(LotFeatures.BuriedThird(built.Level), graded.BuriedThird);
         }
 
-        [Fact]
-        public void A_rejected_slot_keeps_the_pack_builder_s_reason()
+        /// <summary>
+        /// Slot 44 of cover-hunt-111160 is a D2 slot whose coverer gives up after its 20 tries: the first such slot a
+        /// scan of 16,064 covered slots found (P4).
+        /// </summary>
+        [Theory]
+        [InlineData("rung-sample-01", 39, BuildFailure.PlainRejected)]
+        [InlineData("cover-hunt-111160", 44, BuildFailure.CoverRejected)]
+        public void A_rejected_slot_keeps_the_pack_builder_s_reason(string packText, int slot, BuildFailure reason)
         {
-            PackId pack = PackId.Parse("rung-sample-01").Or(default);
+            PackId pack = PackId.Parse(packText).Or(default);
 
-            Assert.Equal(new LotGradeResult.Rejected(BuildFailure.PlainRejected), LotGrading.Grade(pack, new LevelIndex(39)));
+            Assert.Equal(new LotGradeResult.Rejected(reason), LotGrading.Grade(pack, new LevelIndex(slot)));
         }
 
         [Fact]
@@ -46,6 +52,26 @@ namespace PuzzleCore.Tests.Gen
             PackId pack = PackId.Parse(new string('a', 60)).Or(default);
 
             Assert.Throws<ArgumentException>(() => LotGrading.Grade(pack, new LevelIndex(0)));
+        }
+
+        /// <summary>A 59-character pack id leaves room for "-0000" to "-9999", and no more.</summary>
+        [Theory]
+        [InlineData(59, 1, true)]
+        [InlineData(60, 1, false)]
+        [InlineData(59, 10_000, true)]
+        [InlineData(59, 10_001, false)]
+        [InlineData(64, 0, true)]
+        public void A_pack_has_room_for_ids_while_the_last_slot_id_has_at_most_64_characters(int packLength, int slotCount, bool hasRoom)
+        {
+            PackId pack = PackId.Parse(new string('a', packLength)).Or(default);
+
+            Assert.Equal(hasRoom, LotGrading.HasRoomForIds(pack, slotCount));
+        }
+
+        [Fact]
+        public void A_negative_slot_count_is_refused()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() => LotGrading.HasRoomForIds(Pack, -1));
         }
     }
 }

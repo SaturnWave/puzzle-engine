@@ -21,7 +21,7 @@ namespace PuzzleCore.Tests.Jam
 
             LevelGrade grade = LotGrades.Of(built, Pack, index);
 
-            Assert.False(built.IsCovered);
+            Assert.False(built.Level.IsCoveredLevel);
             Assert.Equal(LevelKind.Plan, grade.Kind);
             Assert.False(grade.Deduction.HasValue);
             AssertPlanFields(built, index, grade.Plan);
@@ -35,10 +35,23 @@ namespace PuzzleCore.Tests.Jam
 
             LevelGrade grade = LotGrades.Of(built, Pack, index);
 
-            Assert.True(built.IsCovered);
+            Assert.True(built.Level.IsCoveredLevel);
             Assert.Equal(LevelKind.Think, grade.Kind);
             Assert.Equal(built.Deduction, grade.Deduction);
             AssertPlanFields(built, index, grade.Plan);
+        }
+
+        /// <summary>The kind follows the covers, not the deduction grade, so a mismatch is refused, never graded (Q64).</summary>
+        [Fact]
+        public void A_built_level_whose_covers_and_deduction_grade_disagree_is_refused()
+        {
+            var plainSlot = new LevelIndex(0);
+            var coveredSlot = new LevelIndex(24);
+            BuiltLevel plain = Build(plainSlot);
+            BuiltLevel covered = Build(coveredSlot);
+
+            Assert.Throws<ArgumentException>(() => LotGrades.Of(covered with { Deduction = Option.None<DeductionGrade.Graded>() }, Pack, coveredSlot));
+            Assert.Throws<ArgumentException>(() => LotGrades.Of(plain with { Deduction = covered.Deduction }, Pack, plainSlot));
         }
 
         /// <summary>Par is the vehicle count (the par path's length); DeadEnd 1,000 playouts of this slot; no spare; slack; PeakPar.</summary>

@@ -5,7 +5,8 @@ namespace PuzzleCore.Jam
 {
     /// <summary>
     /// The grades of a built campaign level, field by field as shared-design.md §2 defines them ("Grade fields").
-    /// A covered level is a Think level and a plain level a Plan level: the kind follows the covers alone (Q64).
+    /// A covered level is a Think level and a plain level a Plan level: the kind follows the covers alone (Q64), so
+    /// <see cref="LevelGrade"/> refuses a covered level without a deduction grade and a plain level with one.
     /// </summary>
     public static class LotGrades
     {
@@ -22,7 +23,7 @@ namespace PuzzleCore.Jam
                 SpareNeed: new CapacityCount(0),
                 MinFreeCapacity: new CapacityCount(built.Slack),
                 PeakPar: Option.Some(built.PeakPar));
-            LevelKind kind = built.IsCovered ? LevelKind.Think : LevelKind.Plan;
+            LevelKind kind = built.Level.IsCoveredLevel ? LevelKind.Think : LevelKind.Plan;
             return new LevelGrade(plan, built.Deduction, kind);
         }
     }

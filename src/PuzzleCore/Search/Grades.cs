@@ -27,7 +27,8 @@ namespace PuzzleCore.Search
     /// <summary>
     /// A level's grades: its plan grade, the deduction grade of a Think level, and its kind. A Think level always
     /// carries a deduction grade and a Plan level never does. Only Graded levels ship, so the deduction is never
-    /// NeedsGuess or BudgetExceeded.
+    /// NeedsGuess or BudgetExceeded. The kind and the deduction rung are members of their enums, never other numbers
+    /// cast to them, so every grade has contract names.
     /// </summary>
     public sealed record LevelGrade
     {
@@ -44,6 +45,11 @@ namespace PuzzleCore.Search
             {
                 string rule = isThink ? "A Think level needs a deduction grade." : "A Plan level has no deduction grade.";
                 throw new ArgumentException(rule, nameof(deduction));
+            }
+
+            if (deduction.TryGet(out DeductionGrade.Graded? graded) && graded.Rung is not (DeductionRung.D1 or DeductionRung.D2 or DeductionRung.D3))
+            {
+                throw new ArgumentOutOfRangeException(nameof(deduction), graded.Rung, "Unknown deduction rung.");
             }
 
             Plan = plan;

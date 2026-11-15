@@ -12,13 +12,24 @@ namespace PuzzleCore.Packs
     /// <summary>
     /// A pack's presentation file, {packId}.presentation.json: the grades of the pack's levels, kept apart from the
     /// pack so a changed grade never makes a record unverifiable (Q29, TC11). Players see no tiers or labels from it
-    /// until the difficulty pass. The levels are in strictly ascending slot order, and each level's id is the one
-    /// <see cref="LevelId.For"/> gives for its slot.
+    /// until the difficulty pass. The game is Sort or Jam and the pack id is set. The levels are in strictly
+    /// ascending slot order, each level's id is the one <see cref="LevelId.For"/> gives for its slot, and each level
+    /// has a fingerprint, so <see cref="PresentationJson.Write"/> can write every file this constructor accepts.
     /// </summary>
     public sealed record PresentationFile
     {
         public PresentationFile(GameKind game, PackId pack, ReadOnlyArray<PresentationLevel> levels)
         {
+            if (game is not (GameKind.Sort or GameKind.Jam))
+            {
+                throw new ArgumentOutOfRangeException(nameof(game), game, "Unknown game.");
+            }
+
+            if (pack == default)
+            {
+                throw new ArgumentException("A presentation file belongs to a pack.", nameof(pack));
+            }
+
             for (int index = 0; index < levels.Count; index++)
             {
                 PresentationLevel level = levels[index];
@@ -30,6 +41,11 @@ namespace PuzzleCore.Packs
                 if (LevelId.For(pack, level.Slot) != Option.Some(level.Level))
                 {
                     throw new ArgumentException("A level's id is its pack id and its slot: {packId}-{slot:0000}.", nameof(levels));
+                }
+
+                if (level.Fingerprint == default)
+                {
+                    throw new ArgumentException("Every level has the fingerprint of its text.", nameof(levels));
                 }
             }
 

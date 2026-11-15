@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using PuzzleCore.Jam;
 using PuzzleCore.Randomness;
+using PuzzleCore.Records;
 using PuzzleCore.Search;
 
 namespace PuzzleCore.Cli
@@ -63,7 +64,7 @@ namespace PuzzleCore.Cli
                 int coverPerMille = rung.Value.Built * 1000 / (rung.Value.Planned - rung.Value.PlainRejected);
                 everyRungBuilds &= perMille >= RequiredPerMille;
                 output.Write(string.Concat(
-                    rung.Key.ToString(), ": planned ", Number(rung.Value.Planned), ", built ", Number(rung.Value.Built),
+                    ContractNames.Of(rung.Key), ": planned ", Number(rung.Value.Planned), ", built ", Number(rung.Value.Built),
                     ", plain rejected ", Number(rung.Value.PlainRejected), ", cover rejected ", Number(rung.Value.CoverRejected),
                     ", rate ", Number(perMille), " per mille (covering alone: ", Number(coverPerMille), " per mille)\n"));
             }
@@ -74,13 +75,13 @@ namespace PuzzleCore.Cli
 
         private static string SlotLine(string pack, int index, CoverPlan plan, BuildResult result)
         {
-            string head = string.Concat(pack, " ", index.ToString("0000", CultureInfo.InvariantCulture), " plan=", plan.Rung.ToString());
+            string head = string.Concat(pack, " ", index.ToString("0000", CultureInfo.InvariantCulture), " plan=", ContractNames.Of(plan.Rung));
             switch (result)
             {
                 case BuildResult.Built built when built.Level.Deduction.TryGet(out DeductionGrade.Graded? grade):
                     string text = LotText.Write(built.Level.Level);
                     return string.Concat(
-                        head, " built rung=", grade.Rung.ToString(), " steps=", grade.Steps.ToString(),
+                        head, " built rung=", ContractNames.Of(grade.Rung), " steps=", grade.Steps.ToString(),
                         " ", LineStartingWith(text, "covers="), " ", LineStartingWith(text, "clues="),
                         " lot=", LotText.Fingerprint(built.Level.Level), "\n");
                 case BuildResult.Rejected rejected:

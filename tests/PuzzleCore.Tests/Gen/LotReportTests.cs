@@ -7,6 +7,7 @@ using PuzzleCore.Jam;
 using PuzzleCore.Packs;
 using PuzzleCore.Records;
 using Xunit;
+using static PuzzleCore.Tests.Jam.Boards;
 
 namespace PuzzleCore.Tests.Gen
 {
@@ -43,6 +44,27 @@ namespace PuzzleCore.Tests.Gen
             GradedLot[] levels = HandMadeGrades.Graded().Levels.ToArray();
 
             Assert.Throws<ArgumentException>(() => new GradedLotPack(HandMadeGrades.TestPack, levels.Reverse()));
+        }
+
+        /// <summary>Gen writes each level's text beside the presentation file, so the fingerprint there must be that text's.</summary>
+        [Fact]
+        public void A_graded_pack_refuses_a_level_whose_fingerprint_belongs_to_another_text()
+        {
+            GradedLot[] levels = HandMadeGrades.Graded().Levels.ToArray();
+            levels[1] = levels[1] with { Fingerprint = levels[0].Fingerprint };
+
+            Assert.Throws<ArgumentException>(() => new GradedLotPack(HandMadeGrades.TestPack, levels));
+        }
+
+        /// <summary>The level text has letters for colours 1-6 only, so a level in colour 15 has no text and no fingerprint.</summary>
+        [Fact]
+        public void A_graded_pack_refuses_a_level_its_text_cannot_write()
+        {
+            GradedLot[] levels = HandMadeGrades.Graded().Levels.ToArray();
+            LotLevel colourFifteen = Load(Repainted(SixBluesInAChain() with { Height = 6 }, Blue, new ColourId(ColourId.MaxValue)));
+            levels[0] = levels[0] with { Built = levels[0].Built with { Level = colourFifteen } };
+
+            Assert.ThrowsAny<ArgumentException>(() => new GradedLotPack(HandMadeGrades.TestPack, levels));
         }
 
         [Fact]

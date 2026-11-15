@@ -30,9 +30,21 @@ namespace PuzzleCore.Tests.Core
         [Fact]
         public void A_level_grade_refuses_a_think_level_without_a_deduction_or_a_plan_level_with_one()
         {
-            Assert.Throws<ArgumentException>(() => new LevelGrade(Plan, Option.None<DeductionGrade.Graded>(), LevelKind.Think));
-            Assert.Throws<ArgumentException>(() => new LevelGrade(Plan, Option.Some(Deduction), LevelKind.Plan));
+            ArgumentException thinkWithout = Assert.Throws<ArgumentException>(() => new LevelGrade(Plan, Option.None<DeductionGrade.Graded>(), LevelKind.Think));
+            ArgumentException planWith = Assert.Throws<ArgumentException>(() => new LevelGrade(Plan, Option.Some(Deduction), LevelKind.Plan));
+
+            Assert.StartsWith("A Think level needs a deduction grade.", thinkWithout.Message, StringComparison.Ordinal);
+            Assert.StartsWith("A Plan level has no deduction grade.", planWith.Message, StringComparison.Ordinal);
+            Assert.Equal(("deduction", "deduction"), (thinkWithout.ParamName, planWith.ParamName));
+        }
+
+        [Fact]
+        public void A_level_grade_refuses_a_kind_or_a_deduction_rung_outside_its_enum()
+        {
+            var unknownRung = new DeductionGrade.Graded((DeductionRung)3, new StepCount(2));
+
             Assert.Throws<ArgumentOutOfRangeException>(() => new LevelGrade(Plan, Option.None<DeductionGrade.Graded>(), (LevelKind)2));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new LevelGrade(Plan, Option.Some(unknownRung), LevelKind.Think));
         }
 
         [Fact]

@@ -26,20 +26,30 @@ namespace PuzzleCore.Jam
 
         public int Value { get; }
 
-        /// <summary>total / count in thousandths, rounded down. count must be positive and total not negative.</summary>
-        public static Thousandths MeanOf(int total, int count)
+        /// <summary>
+        /// The mean of the counts in thousandths, rounded down: 7, 7 and 6 give 6666. There is at least one count and
+        /// none is negative. The sum is kept in 64 bits, so only a mean above int.MaxValue thousandths overflows
+        /// (OverflowException).
+        /// </summary>
+        public static Thousandths MeanOf(IReadOnlyList<int> counts)
         {
-            if (count <= 0)
+            if (counts.Count == 0)
             {
-                throw new ArgumentOutOfRangeException(nameof(count), count, "A mean needs at least one value.");
+                throw new ArgumentException("A mean needs at least one count.", nameof(counts));
             }
 
-            if (total < 0)
+            long sum = 0;
+            for (int index = 0; index < counts.Count; index++)
             {
-                throw new ArgumentOutOfRangeException(nameof(total), total, "The total is never negative.");
+                if (counts[index] < 0)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(counts), counts[index], "A count is never negative.");
+                }
+
+                sum += counts[index];
             }
 
-            return new Thousandths((int)((long)total * PerUnit / count));
+            return new Thousandths((int)(sum * PerUnit / counts.Count));
         }
 
         public bool Equals(Thousandths other) => Value == other.Value;
@@ -70,13 +80,13 @@ namespace PuzzleCore.Jam
         {
             var rules = new JamRules(built.Level);
             var legalMoves = new List<Exit>();
+            var choicesBeforeEachMove = new List<int>();
             LotState state = rules.Start;
-            int choices = 0;
             foreach (Exit exit in built.ParPath)
             {
                 legalMoves.Clear();
                 rules.AppendLegalMoves(state, legalMoves);
-                choices += legalMoves.Count;
+                choicesBeforeEachMove.Add(legalMoves.Count);
                 if (!(rules.TryApply(state, exit) is MoveResult<LotState, ExitRejection>.Applied applied))
                 {
                     throw new ArgumentException("The par path must be legal.", nameof(built));
@@ -90,7 +100,7 @@ namespace PuzzleCore.Jam
                 throw new ArgumentException("The par path must win.", nameof(built));
             }
 
-            return Thousandths.MeanOf(choices, built.ParPath.Count);
+            return Thousandths.MeanOf(choicesBeforeEachMove);
         }
 
         /// <summary>
@@ -102,8 +112,7 @@ namespace PuzzleCore.Jam
         public static Thousandths BuriedThird(LotLevel level)
         {
             int[] depths = ExitDepths(level);
-            int total = 0;
-            int sets = 0;
+            var lastOfEachSet = new List<int>();
             for (int colour = ColourId.MinValue; colour <= ColourId.MaxValue; colour++)
             {
                 int[] ranked = Enumerable.Range(0, level.VehicleCount)
@@ -113,12 +122,11 @@ namespace PuzzleCore.Jam
                     .ToArray();
                 for (int last = JamRules.SetSize - 1; last < ranked.Length; last += JamRules.SetSize)
                 {
-                    total += ranked[last];
-                    sets++;
+                    lastOfEachSet.Add(ranked[last]);
                 }
             }
 
-            return Thousandths.MeanOf(total, sets);
+            return Thousandths.MeanOf(lastOfEachSet);
         }
 
         /// <summary>Each vehicle's exit depth at the start, by PieceId.</summary>

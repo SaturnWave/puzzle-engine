@@ -53,6 +53,26 @@ namespace PuzzleCore.Gen
             };
         }
 
+        /// <summary>
+        /// Whether slots 0 to slotCount - 1 of the pack all have level ids (<see cref="LevelId.For"/>). Ids grow with
+        /// the slot's digits, so the last slot's id is the longest.
+        /// </summary>
+        public static bool HasRoomForIds(PackId pack, int slotCount)
+        {
+            if (slotCount < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(slotCount), slotCount, "A slot count is never negative.");
+            }
+
+            return slotCount == 0 || LevelId.For(pack, new LevelIndex(slotCount - 1)).HasValue;
+        }
+
+        /// <summary>The fingerprint of the level's canonical text, in the form records and presentation files carry.</summary>
+        internal static LevelFingerprint FingerprintOf(LotLevel level) =>
+            LevelFingerprint.Parse(LotText.Fingerprint(level)).TryGet(out LevelFingerprint fingerprint)
+                ? fingerprint
+                : throw new InvalidOperationException("LotText.Fingerprint always gives 64 lowercase hex digits.");
+
         private static GradedLot Graded(LevelId id, PackId pack, LevelIndex slot, BuiltLevel built) => new(
             Id: id,
             Slot: slot,
@@ -61,11 +81,5 @@ namespace PuzzleCore.Gen
             Grade: LotGrades.Of(built, pack, slot),
             Branching: LotFeatures.Branching(built),
             BuriedThird: LotFeatures.BuriedThird(built.Level));
-
-        /// <summary>The level's fingerprint in the form records and presentation files carry.</summary>
-        private static LevelFingerprint FingerprintOf(LotLevel level) =>
-            LevelFingerprint.Parse(LotText.Fingerprint(level)).TryGet(out LevelFingerprint fingerprint)
-                ? fingerprint
-                : throw new InvalidOperationException("LotText.Fingerprint always gives 64 lowercase hex digits.");
     }
 }

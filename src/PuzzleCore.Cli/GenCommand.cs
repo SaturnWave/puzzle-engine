@@ -29,9 +29,7 @@ namespace PuzzleCore.Cli
                 return 2;
             }
 
-            // Ids grow with the slot's digits, so the last slot's id is the longest.
-            bool hasRoomForIds = count == 0 || LevelId.For(pack, new LevelIndex(count - 1)).HasValue;
-            if (!hasRoomForIds)
+            if (!LotGrading.HasRoomForIds(pack, count))
             {
                 output.Write("the pack id is too long: level ids {packId}-{slot:0000} have at most 64 characters\n");
                 return 2;

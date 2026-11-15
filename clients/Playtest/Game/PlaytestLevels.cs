@@ -3,6 +3,7 @@ using System.Globalization;
 using PuzzleCore;
 using PuzzleCore.Jam;
 using PuzzleCore.Randomness;
+using PuzzleCore.Records;
 
 namespace CoveredLot.Playtest.Game
 {
@@ -44,7 +45,7 @@ namespace CoveredLot.Playtest.Game
                     string name = "Level " + (index + 1).ToString(CultureInfo.InvariantCulture) + " · " + built.Level.Level.Size.ToString();
                     if (built.Level.Deduction.TryGet(out PuzzleCore.Search.DeductionGrade.Graded? grade))
                     {
-                        name += " · covered " + grade.Rung.ToString();
+                        name += " · covered " + ContractNames.Of(grade.Rung);
                     }
 
                     levels.Add(new PlaytestLevel(name, built.Level.Level, built.Level.PeakPar));

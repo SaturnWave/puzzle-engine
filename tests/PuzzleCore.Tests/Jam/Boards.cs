@@ -124,6 +124,37 @@ namespace PuzzleCore.Tests.Jam
                 Car(Blue, 22, Facing.East)),
             Clues: ReadOnlyArray.Empty<LotClue>());
 
+        /// <summary>
+        /// A 5×5 lot of six blue cars with four bays: piece 0 waits behind 1 and 1 behind 2, and three cars are free.
+        /// Pieces in anchor order: 0 B&gt; 1 Bv 2 Bv 3 B&lt; 4 B&gt; 5 B&lt;. Exit depths by PieceId: 2, 1, 0, 0, 0, 0,
+        /// which rank as 0, 0, 0, 0, 1, 2: the two sets end at depths 0 and 2, with the 4th and 5th cars between.
+        /// </summary>
+        public static LotDefinition SixBluesInAShortChain() => new(
+            Width: 5,
+            Height: 5,
+            Bays: 4,
+            Pillars: ReadOnlyArray.Empty<int>(),
+            Vehicles: ReadOnlyArray.Of(
+                Car(Blue, 0, Facing.East),
+                Car(Blue, 2, Facing.South),
+                Car(Blue, 12, Facing.South),
+                Car(Blue, 15, Facing.West),
+                Car(Blue, 18, Facing.East),
+                Car(Blue, 20, Facing.West)),
+            Clues: ReadOnlyArray.Empty<LotClue>());
+
+        /// <summary>The board with every car of one colour repainted in another.</summary>
+        public static LotDefinition Repainted(LotDefinition board, ColourId from, ColourId to)
+        {
+            var vehicles = new List<VehicleSpec>();
+            foreach (VehicleSpec vehicle in board.Vehicles)
+            {
+                vehicles.Add(vehicle.Colour == from ? vehicle with { Colour = to } : vehicle);
+            }
+
+            return board with { Vehicles = ReadOnlyArray.CopyOf(vehicles) };
+        }
+
         public static VehicleSpec Car(ColourId colour, int anchor, Facing facing, bool covered = false) =>
             new(colour, anchor, VehicleLength.Two, facing, covered);
 

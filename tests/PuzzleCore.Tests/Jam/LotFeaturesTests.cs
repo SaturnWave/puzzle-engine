@@ -73,6 +73,23 @@ namespace PuzzleCore.Tests.Jam
         }
 
         [Fact]
+        public void A_colour_of_two_sets_counts_only_its_3rd_and_6th_shallowest_vehicles()
+        {
+            // Depths 2, 1, 0, 0, 0, 0 rank as 0, 0, 0, 0, 1, 2: the sets end at 0 and 2, so the mean is 1. The 4th and
+            // 5th cars, at 0 and 1, count for nothing.
+            Assert.Equal(new Thousandths(1000), LotFeatures.BuriedThird(Load(SixBluesInAShortChain())));
+        }
+
+        [Fact]
+        public void Every_colour_up_to_the_highest_colour_id_counts()
+        {
+            // ThirdsBehindYellows with its yellows in colour 15, the highest: still (1 + 1 + 0) / 3.
+            LotDefinition board = Repainted(ThirdsBehindYellows(), Yellow, new ColourId(ColourId.MaxValue));
+
+            Assert.Equal(new Thousandths(666), LotFeatures.BuriedThird(Load(board)));
+        }
+
+        [Fact]
         public void A_lot_where_every_vehicle_can_leave_at_once_buries_nothing()
         {
             Assert.Equal(new Thousandths(0), LotFeatures.BuriedThird(Load(FreeCars(4, Blue, Red, Yellow, Blue, Red, Yellow, Blue, Red, Yellow))));
@@ -81,12 +98,20 @@ namespace PuzzleCore.Tests.Jam
         [Fact]
         public void A_mean_in_thousandths_rounds_down_and_is_never_negative()
         {
-            Assert.Equal(new Thousandths(333), Thousandths.MeanOf(1, 3));
-            Assert.Equal(new Thousandths(24000), Thousandths.MeanOf(48, 2));
-            Assert.Throws<ArgumentOutOfRangeException>(() => Thousandths.MeanOf(1, 0));
-            Assert.Throws<ArgumentOutOfRangeException>(() => Thousandths.MeanOf(-1, 3));
+            Assert.Equal(new Thousandths(333), Thousandths.MeanOf(new[] { 1, 0, 0 }));
+            Assert.Equal(new Thousandths(6666), Thousandths.MeanOf(new[] { 7, 7, 6 }));
+            Assert.Equal(new Thousandths(24000), Thousandths.MeanOf(new[] { 48, 0 }));
+            Assert.Throws<ArgumentException>(() => Thousandths.MeanOf(Array.Empty<int>()));
+            Assert.Throws<ArgumentOutOfRangeException>(() => Thousandths.MeanOf(new[] { -1, 2, 2 }));
             Assert.Throws<ArgumentOutOfRangeException>(() => new Thousandths(-1));
             Assert.Equal("5380", new Thousandths(5380).ToString());
+        }
+
+        [Fact]
+        public void A_mean_keeps_its_sum_in_64_bits()
+        {
+            // 1,001 counts of 2,147,483 sum past int.MaxValue, yet their mean, 2,147,483,000 thousandths, fits an int.
+            Assert.Equal(new Thousandths(2_147_483_000), Thousandths.MeanOf(Enumerable.Repeat(2_147_483, 1001).ToArray()));
         }
 
         /// <summary>A built level whose par path is the given order; the features read only the level and the path.</summary>
