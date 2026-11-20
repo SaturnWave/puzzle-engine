@@ -118,6 +118,23 @@ namespace PuzzleCore.Tests.Jam
         }
 
         [Fact]
+        public void An_ahead_differs_tag_whose_own_vehicle_was_seen_first_rules_the_seen_colour_off_its_reference()
+        {
+            // Covers 2 (Y), 3 (B), 5 (Y); tag "2 differs from ahead", whose reference is 3. Seeing 2 (yellow) while 3 is
+            // still covered takes yellow off 3, the colour seen and not 3's own: 3 is blue at D1, and the ledger leaves 5
+            // yellow.
+            LotLevel level = Load(SixBySix() with
+            {
+                Vehicles = Covered(SixBySix(), 2, 3, 5),
+                Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Ahead(new PieceId(2), AheadRelation.Differs)),
+            });
+
+            CoverReading reading = LotClues.Read(level, Seen(2), DeductionRung.D1);
+
+            Assert.Equal(new[] { Fixed(3, Blue), Fixed(5, Yellow) }, reading.Covers);
+        }
+
+        [Fact]
         public void A_touch_count_over_two_covers_is_about_the_other_one_once_one_is_seen()
         {
             // Covers 5 (Y), 7 (R), 8 (Y); tag 7 "touches 0 R" over its covered neighbours 5 and 8. At the start that is a
