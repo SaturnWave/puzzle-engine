@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The bots (P5). The root namespace PuzzleCore.Bot is a shared part: the bot contracts, their fixed names and the
+       run loop. Each game's bots sit in their own namespace (Covered Lot: PuzzleCore.Bot.Jam) and stay that game's own.
+       Shipped to Unity only if hints need bots: netstandard2.1, C# 9, no packages. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <RootNamespace>PuzzleCore.Bot</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\Shared\IsExternalInit.cs" Link="Shared\IsExternalInit.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PuzzleCore\PuzzleCore.csproj" />
+    <ProjectReference Include="..\PuzzleCore.Jam\PuzzleCore.Jam.csproj" />
+  </ItemGroup>
+</Project>

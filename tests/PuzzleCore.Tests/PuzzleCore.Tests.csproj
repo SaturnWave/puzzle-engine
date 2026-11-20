@@ -13,6 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\PuzzleCore\PuzzleCore.csproj" />
     <ProjectReference Include="..\..\src\PuzzleCore.Jam\PuzzleCore.Jam.csproj" />
+    <ProjectReference Include="..\..\src\PuzzleCore.Bot\PuzzleCore.Bot.csproj" />
     <ProjectReference Include="..\..\src\PuzzleCore.Gen\PuzzleCore.Gen.csproj" />
     <ProjectReference Include="..\..\src\PuzzleCore.Cli\PuzzleCore.Cli.csproj" />
   </ItemGroup>

@@ -12,13 +12,14 @@
   <PropertyGroup>
     <PuzzleIsSourceProject>$([System.String]::Copy('$(MSBuildProjectDirectory)').Replace('\','/').Contains('/src/'))</PuzzleIsSourceProject>
     <PuzzleIsUnityBound>false</PuzzleIsUnityBound>
-    <PuzzleIsUnityBound Condition="'$(MSBuildProjectName)' == 'PuzzleCore' or '$(MSBuildProjectName)' == 'PuzzleCore.Jam'">true</PuzzleIsUnityBound>
+    <PuzzleIsUnityBound Condition="'$(MSBuildProjectName)' == 'PuzzleCore' or '$(MSBuildProjectName)' == 'PuzzleCore.Jam' or '$(MSBuildProjectName)' == 'PuzzleCore.Bot'">true</PuzzleIsUnityBound>
     <PuzzleLayeringKnown>false</PuzzleLayeringKnown>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PuzzleCore'"><PuzzleLayeringKnown>true</PuzzleLayeringKnown><PuzzleAllowedProjectReferences></PuzzleAllowedProjectReferences></PropertyGroup>
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PuzzleCore.Jam'"><PuzzleLayeringKnown>true</PuzzleLayeringKnown><PuzzleAllowedProjectReferences>PuzzleCore</PuzzleAllowedProjectReferences></PropertyGroup>
-  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PuzzleCore.Gen'"><PuzzleLayeringKnown>true</PuzzleLayeringKnown><PuzzleAllowedProjectReferences>PuzzleCore;PuzzleCore.Jam</PuzzleAllowedProjectReferences></PropertyGroup>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PuzzleCore.Bot'"><PuzzleLayeringKnown>true</PuzzleLayeringKnown><PuzzleAllowedProjectReferences>PuzzleCore;PuzzleCore.Jam</PuzzleAllowedProjectReferences></PropertyGroup>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PuzzleCore.Gen'"><PuzzleLayeringKnown>true</PuzzleLayeringKnown><PuzzleAllowedProjectReferences>PuzzleCore;PuzzleCore.Jam;PuzzleCore.Bot</PuzzleAllowedProjectReferences></PropertyGroup>
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PuzzleCore.Cli'"><PuzzleLayeringKnown>true</PuzzleLayeringKnown><PuzzleAllowedProjectReferences>PuzzleCore;PuzzleCore.Jam;PuzzleCore.Gen</PuzzleAllowedProjectReferences></PropertyGroup>
 
   <Target Name="PuzzleGuardProjectRules" BeforeTargets="CoreCompile">

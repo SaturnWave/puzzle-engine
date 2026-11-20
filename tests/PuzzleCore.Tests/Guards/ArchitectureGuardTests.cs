@@ -52,11 +52,23 @@ namespace PuzzleCore.Tests.Guards
             {
                 Assert.Equal(Sorted(allowed), Sorted(buildTable[project]));
             }
+        }
 
-            foreach (string project in ProjectRules.UnityBoundProjects)
-            {
-                Assert.Contains("'$(MSBuildProjectName)' == '" + project + "'", targets, StringComparison.Ordinal);
-            }
+        /// <summary>
+        /// The build checks LangVersion 9.0 and the absence of packages only for the projects its PuzzleIsUnityBound
+        /// condition names, so that condition must name exactly the Unity-bound projects: one left out would lose those
+        /// checks without any error (P5, TC26).
+        /// </summary>
+        [Fact]
+        public void The_build_marks_exactly_the_unity_bound_projects_as_unity_bound()
+        {
+            string targets = File.ReadAllText(RepositoryLayout.FullPath("Directory.Build.targets"));
+            IReadOnlyList<Match> conditions = Regex.Matches(targets, "<PuzzleIsUnityBound Condition=\"([^\"]*)\">true</PuzzleIsUnityBound>").ToList();
+
+            Assert.Single(conditions);
+            IEnumerable<string> named = Regex.Matches(conditions[0].Groups[1].Value, "'\\$\\(MSBuildProjectName\\)' == '([^']+)'")
+                .Select(match => match.Groups[1].Value);
+            Assert.Equal(Sorted(ProjectRules.UnityBoundProjects), Sorted(named));
         }
 
         [Theory]

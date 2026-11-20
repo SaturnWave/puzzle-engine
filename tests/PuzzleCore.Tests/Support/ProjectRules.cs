@@ -10,14 +10,15 @@ namespace PuzzleCore.Tests.Support
     /// </summary>
     internal static class ProjectRules
     {
-        public static IReadOnlyList<string> UnityBoundProjects { get; } = new[] { "PuzzleCore", "PuzzleCore.Jam" };
+        public static IReadOnlyList<string> UnityBoundProjects { get; } = new[] { "PuzzleCore", "PuzzleCore.Jam", "PuzzleCore.Bot" };
 
         public static IReadOnlyDictionary<string, IReadOnlyList<string>> AllowedProjectReferences { get; } =
             new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
             {
                 ["PuzzleCore"] = Array.Empty<string>(),
                 ["PuzzleCore.Jam"] = new[] { "PuzzleCore" },
-                ["PuzzleCore.Gen"] = new[] { "PuzzleCore", "PuzzleCore.Jam" },
+                ["PuzzleCore.Bot"] = new[] { "PuzzleCore", "PuzzleCore.Jam" },
+                ["PuzzleCore.Gen"] = new[] { "PuzzleCore", "PuzzleCore.Jam", "PuzzleCore.Bot" },
                 ["PuzzleCore.Cli"] = new[] { "PuzzleCore", "PuzzleCore.Jam", "PuzzleCore.Gen" },
             };
 
