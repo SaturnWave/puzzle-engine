@@ -120,6 +120,22 @@ namespace PuzzleCore.Tests.Bot
         }
 
         [Fact]
+        public void A_mistake_is_a_roll_below_the_rate()
+        {
+            // The first roll on this stream is read from an independent copy: a rate equal to it makes no mistake on the
+            // first move, a rate one above it does. Any move wins, so each run has one move.
+            int roll = (int)Pcg32.Seeded(21, 4).NextBelow(1000);
+            Assert.InRange(roll, 1, 998);
+            var rules = new ToyRules(value => new[] { 1, 2, 3 }, value => value >= 1 ? ToyRules.Won : ToyRules.InPlay);
+
+            var atRoll = BotRunner.Run(rules, Start, Profile(roll), ScriptedPolicy.Intending(1), Pcg32.Seeded(21, 4), RoomyCap);
+            var aboveRoll = BotRunner.Run(rules, Start, Profile(roll + 1), ScriptedPolicy.Intending(1), Pcg32.Seeded(21, 4), RoomyCap);
+
+            Assert.Equal(Intended(1), Assert.Single(atRoll.Steps));
+            Assert.True(Assert.Single(aboveRoll.Steps).WasMistake);
+        }
+
+        [Fact]
         public void With_two_legal_moves_a_mistake_plays_the_other_one_without_another_draw()
         {
             var rules = new ToyRules(value => new[] { 1, 2 }, value => ToyRules.InPlay);
