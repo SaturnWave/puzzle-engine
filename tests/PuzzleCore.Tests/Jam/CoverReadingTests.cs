@@ -219,6 +219,38 @@ namespace PuzzleCore.Tests.Jam
             Assert.Throws<InvalidOperationException>(() => LotClues.Read(contradicting, NothingSeen, DeductionRung.D1));
         }
 
+        [Fact]
+        public void A_tag_that_a_seen_colour_breaks_is_an_engine_fault_though_it_no_longer_rules_a_hidden_cover()
+        {
+            // "3 not B" is false (3 is blue). While 3 is covered the ledger alone could hide that; once 3 is seen, the tag
+            // speaks only of an open vehicle. "7 differs from ahead" is false too (6 and 7 are both red); once both are
+            // seen, it speaks of no cover at all. A certified level never does either, so the reader treats both as faults.
+            LotLevel falseNot = Load(SixBySix() with { Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Not(new PieceId(3), Blue)) });
+            LotLevel falseAhead = Load(SixBySix() with
+            {
+                Vehicles = Covered(SixBySix(), 3, 6, 7),
+                Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Ahead(new PieceId(7), AheadRelation.Differs)),
+            });
+
+            Assert.Throws<InvalidOperationException>(() => LotClues.Read(falseNot, Seen(3), DeductionRung.D1));
+            Assert.Throws<InvalidOperationException>(() => LotClues.Read(falseAhead, Seen(6, 7), DeductionRung.D2));
+        }
+
+        [Fact]
+        public void A_true_tag_about_open_vehicles_only_is_no_fault()
+        {
+            // "3 not R" and "7 same as ahead" stay true when their vehicles are seen.
+            LotLevel level = Load(SixBySix() with
+            {
+                Vehicles = Covered(SixBySix(), 3, 6, 7),
+                Clues = ReadOnlyArray.Of<LotClue>(new LotClue.Not(new PieceId(3), Red), new LotClue.Ahead(new PieceId(7), AheadRelation.Same)),
+            });
+
+            CoverReading reading = LotClues.Read(level, Seen(3, 6, 7), DeductionRung.D1);
+
+            Assert.Empty(reading.Covers);
+        }
+
         /// <summary>The reading lists the covers still hidden in order, its ledger counts their true colours, and each set holds the true colour.</summary>
         private static void AssertTrueTo(LotLevel level, SeenSet seen, CoverReading reading)
         {

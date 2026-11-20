@@ -28,8 +28,7 @@ namespace PuzzleCore.Bot.Jam
         // What the bot read before its last move; None at the start and after a lift, until it reads again.
         private Option<CoverReading> _reading = Option.None<CoverReading>();
         private bool _hasGuessed;
-        private int _guessesRight;
-        private int _guessesWrong;
+        private GuessTally _guesses = GuessTally.None;
 
         public PlannerPolicy(LotLevel level, MoveCount plies, DeductionRung ceiling)
         {
@@ -56,7 +55,7 @@ namespace PuzzleCore.Bot.Jam
         /// <summary>The highest rung it reads covers at: Planner1 D1, Planner3 D2.</summary>
         public DeductionRung Ceiling => _ceiling;
 
-        public override Option<GuessTally> Guesses => Option.Some(new GuessTally(_guessesRight, _guessesWrong));
+        public override Option<GuessTally> Guesses => Option.Some(_guesses);
 
         /// <summary>The colour the bot believes the vehicle has; a cover still hidden has a guess only once the bot has moved.</summary>
         public ColourId Believes(PieceId piece) => _colours.Of(piece);
@@ -133,9 +132,7 @@ namespace PuzzleCore.Bot.Jam
 
                 if (cover.Colours.Count >= 2)
                 {
-                    bool isRight = _colours.Of(lifted.Piece) == lifted.Colour;
-                    _guessesRight += isRight ? 1 : 0;
-                    _guessesWrong += isRight ? 0 : 1;
+                    _guesses = _guesses.After(wasRight: _colours.Of(lifted.Piece) == lifted.Colour);
                 }
 
                 return;

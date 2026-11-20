@@ -52,11 +52,13 @@ namespace PuzzleCore.Tests.Gen
         [Fact]
         public void The_calibration_pack_plays_as_recorded()
         {
-            SimPack sim = LotSim.Run(Pack, 100, Environment.ProcessorCount, withFailCauses: false);
-
-            // The pack first: if the generator changed it, nothing below compares like with like (TC25). Stop and ask.
-            string packPin = Sha256(PackLines(sim));
+            // The pack first, before any bot plays it: if the generator changed it, nothing below compares like with like
+            // (TC25). Stop and ask.
+            SimBuild build = LotSim.Build(Pack, LotSim.FirstSlots(100), WorkerCount.EveryProcessor);
+            string packPin = Sha256(PackLines(build));
             Assert.True(packPin == PackPin, "The calibration pack changed (pin " + packPin + "): stop and ask before re-pinning (TC25).");
+
+            SimPack sim = LotSim.Play(build, new SimSettings(WorkerCount.EveryProcessor, WithFailCauses: false));
 
             // The invariants (Q82). sim already throws on the first two; the test says them again.
             List<SimRun> runs = sim.Simulated.SelectMany(level => level.Profiles).SelectMany(profile => profile.Runs).ToList();
@@ -85,11 +87,11 @@ namespace PuzzleCore.Tests.Gen
         }
 
         /// <summary>One line per slot: its level's fingerprint, or REJECTED and the builder's reason (TC25).</summary>
-        private static IEnumerable<string> PackLines(SimPack sim) => sim.Slots.Select(slot => slot switch
+        private static IEnumerable<string> PackLines(SimBuild build) => build.Slots.Select((slot, index) => build.Builds[index] switch
         {
-            SimSlot.Simulated level => Number4(level.Slot.Value) + " " + LotText.Fingerprint(level.Built.Level),
-            SimSlot.Rejected rejected => Number4(rejected.Slot.Value) + " REJECTED " + rejected.Reason.ToString(),
-            _ => throw new InvalidOperationException("Unknown sim slot."),
+            BuildResult.Built built => Number4(slot.Value) + " " + LotText.Fingerprint(built.Level.Level),
+            BuildResult.Rejected rejected => Number4(slot.Value) + " REJECTED " + rejected.Reason.ToString(),
+            _ => throw new InvalidOperationException("BuildResult is a closed set."),
         });
 
         private static IEnumerable<string> RunLines(SimPack sim) =>

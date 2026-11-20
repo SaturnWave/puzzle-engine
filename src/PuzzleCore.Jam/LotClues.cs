@@ -78,6 +78,10 @@ namespace PuzzleCore.Jam
         // Constraints over several covers (Touch counts, Ahead links), then the ledger's count: the D3 steps.
         private readonly List<Rule> _wideRules = new List<Rule>();
 
+        // A tag that now speaks only of open vehicles (a Not on a cover seen, an Ahead between two open vehicles) and is
+        // false of their colours. It puts no rule on the covers still hidden, so only Read's check can report it.
+        private readonly bool _aSeenColourBreaksATag;
+
         public LotClues(LotLevel level)
             : this(level, default)
         {
@@ -116,6 +120,7 @@ namespace PuzzleCore.Jam
             {
                 if (!RuleFor(level, clue, positionOf).TryGet(out Rule? rule))
                 {
+                    _aSeenColourBreaksATag |= !HoldsOnOpenVehicles(level, clue);
                     continue;
                 }
 
@@ -222,6 +227,11 @@ namespace PuzzleCore.Jam
             }
 
             var clues = new LotClues(level, seen);
+            if (clues._aSeenColourBreaksATag)
+            {
+                throw new InvalidOperationException("A tag contradicts the colours seen.");
+            }
+
             var fixedColours = new Option<ColourId>[clues.HiddenCells.Count];
             while (true)
             {
@@ -672,6 +682,26 @@ namespace PuzzleCore.Jam
             return referenceAt >= 0
                 ? Option.Some<Rule>(new AheadRule(referenceAt, -1, level.VehicleOf(ahead.On).Colour.Value, same))
                 : Option.None<Rule>();
+        }
+
+        /// <summary>
+        /// Whether a tag that puts no rule on the hidden covers is true of the open vehicles it speaks of: a Not about a cover
+        /// seen, or an Ahead whose vehicle and reference are both open. Only those two lose their rule (<see cref="RuleFor"/>).
+        /// </summary>
+        private static bool HoldsOnOpenVehicles(LotLevel level, LotClue clue)
+        {
+            switch (clue)
+            {
+                case LotClue.Not not:
+                    return level.VehicleOf(not.On).Colour != not.Colour;
+                case LotClue.Ahead ahead:
+                    // The loader guarantees a blocker at the start for every Ahead tag.
+                    level.FirstOnPathAtStart(ahead.On).TryGet(out PieceId reference);
+                    bool isSame = level.VehicleOf(ahead.On).Colour == level.VehicleOf(reference).Colour;
+                    return isSame == (ahead.Relation == AheadRelation.Same);
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(clue), "Only Not and Ahead tags can lose their rule.");
+            }
         }
 
         /// <summary>The count over the hidden neighbours; open neighbours (never covered, or seen) of the colour are counted out.</summary>

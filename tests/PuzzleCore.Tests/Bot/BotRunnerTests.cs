@@ -210,6 +210,20 @@ namespace PuzzleCore.Tests.Bot
             Assert.Equal(expected.NextUInt32(), stream.NextUInt32());
         }
 
+        [Fact]
+        public void A_step_hashes_any_move_whatever_its_hash()
+        {
+            // A move's hash may be any int; mixing it must wrap rather than throw under the checked build.
+            var steps = new[] { int.MaxValue, int.MinValue, 1 << 30, -(1 << 30) - 1 }
+                .SelectMany(hash => new[] { new BotStep<ToyMove>(new ToyMove(hash), wasMistake: false), new BotStep<ToyMove>(new ToyMove(hash), wasMistake: true) })
+                .ToList();
+
+            var set = new HashSet<BotStep<ToyMove>>(steps);
+
+            Assert.Equal(steps.Count, set.Count);
+            Assert.Equal(unchecked(int.MaxValue * 2), Intended(int.MaxValue).GetHashCode());
+        }
+
         private static BotProfile Profile(int mistakes) => new(BotProfileId.Greedy, new BotSearch.Habit(), new PerMille(mistakes));
 
         private static BotStep<ToyMove> Intended(int step) => new(new ToyMove(step), wasMistake: false);

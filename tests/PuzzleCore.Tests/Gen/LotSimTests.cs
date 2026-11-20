@@ -25,7 +25,7 @@ namespace PuzzleCore.Tests.Gen
     {
         private static readonly LevelIndex[] Sample = { new(0), new(62), new(24), new(44), new(64) };
 
-        private static readonly Lazy<SimPack> Simulated = new(() => LotSim.Run(CampaignLevels.Pack, Sample, 4, withFailCauses: true));
+        private static readonly Lazy<SimPack> Simulated = new(() => LotSim.Run(CampaignLevels.Pack, Sample, Settings(4, withFailCauses: true)));
 
         [Fact]
         public void Every_profile_runs_200_times_and_every_run_is_won_or_fills_the_bays()
@@ -108,16 +108,30 @@ namespace PuzzleCore.Tests.Gen
             var losing = new BuiltLevel(
                 level, default, ReadOnlyArray.CopyOf(new[] { 0, 1, 2, 3 }.Select(piece => new Exit(new PieceId((byte)piece)))), Option.None<Search.DeductionGrade.Graded>());
 
-            Assert.Throws<InvalidOperationException>(() => LotSim.Play(CampaignLevels.Pack, new LevelIndex(0), losing, LotBots.Expert, withFailCauses: false));
+            InvalidOperationException fault = Assert.Throws<InvalidOperationException>(
+                () => LotSim.PlayProfile(CampaignLevels.Pack, new LevelIndex(0), losing, LotBots.Expert, Settings(1, withFailCauses: false)));
+
+            Assert.StartsWith("Slot 0, Expert", fault.Message, StringComparison.Ordinal);
         }
 
         [Fact]
-        public void One_worker_and_four_write_byte_identical_reports()
+        public void One_worker_and_four_give_the_same_runs_and_write_byte_identical_files()
         {
-            SimPack alone = LotSim.Run(CampaignLevels.Pack, Sample, 1, withFailCauses: true);
+            SimPack alone = LotSim.Run(CampaignLevels.Pack, Sample, Settings(1, withFailCauses: true));
 
-            Assert.Equal(LotSimCsv.Write(alone), LotSimCsv.Write(Simulated.Value));
-            Assert.Equal(LotSimCsv.WriteFails(alone), LotSimCsv.WriteFails(Simulated.Value));
+            Assert.Equal(RunLines(Simulated.Value), RunLines(alone));
+            Assert.Equal(FilesWritten(Simulated.Value), FilesWritten(alone));
+        }
+
+        [Fact]
+        public void Each_simulated_level_carries_its_own_slots_id_into_the_reports()
+        {
+            SimPack pack = Simulated.Value;
+            List<string[]> rows = LotSimCsv.Write(pack).Split('\n').Skip(1).Where(line => line.Length > 0).Select(line => line.Split(',')).ToList();
+
+            Assert.All(pack.Simulated, level => Assert.Equal(LevelId.For(pack.Pack, level.Slot), Option.Some(level.Id)));
+            Assert.All(rows, row => Assert.Equal(LevelId.For(pack.Pack, new LevelIndex(Number(row[1]))), LevelId.Parse(row[0])));
+            Assert.Equal(new[] { "campaign-jam-0000", "campaign-jam-0024", "campaign-jam-0044", "campaign-jam-0064" }, rows.Select(row => row[0]).Distinct());
         }
 
         [Fact]
@@ -126,7 +140,10 @@ namespace PuzzleCore.Tests.Gen
             string[] lines = LotSimCsv.Write(Simulated.Value).Split('\n');
             List<string[]> rows = lines.Skip(1).Where(line => line.Length > 0).Select(line => line.Split(',')).ToList();
 
-            Assert.Equal(LotSimCsv.Header, lines[0]);
+            Assert.Equal(
+                "level_id,slot,kind,rung,profile,bot_end_reason,runs,near_miss_yes,near_miss_no,near_miss_spare_unavailable,near_miss_unknown,"
+                + "near_miss_yes_permille,last_move_mistake_near_miss_yes,runs_with_mistake,last_move_mistake,guesses_right,guesses_wrong",
+                lines[0]);
             Assert.Equal(string.Empty, lines[^1]);
             Assert.Equal(4 * 4 * 5, rows.Count);
             Assert.All(rows, row => Assert.Equal(17, row.Length));
@@ -154,13 +171,17 @@ namespace PuzzleCore.Tests.Gen
             Assert.Equal(("Think", "D3"), (slotsFull[2], slotsFull[3]));
             Assert.Equal(Text(fails.Count), slotsFull[6]);
             Assert.Equal(Text(fails.Count(run => run.IsNearMiss)), slotsFull[7]);
+            Assert.Equal(Text(fails.Count(run => Is<NearMiss.No>(run))), slotsFull[8]);
+            Assert.Equal(Text(fails.Count(run => Is<NearMiss.SpareUnavailable>(run))), slotsFull[9]);
+            Assert.Equal(Text(fails.Count(run => Is<NearMiss.Unknown>(run))), slotsFull[10]);
+            Assert.Equal(fails.Count, fails.Count(run => Is<NearMiss.Yes>(run) || Is<NearMiss.No>(run)));
             Assert.Equal(Text(PerMille.Of(fails.Count(run => run.IsNearMiss), fails.Count).Value), slotsFull[11]);
             Assert.Equal(Text(fails.Count(run => run.Mistakes > 0)), slotsFull[13]);
             Assert.Equal(Text(fails.Count(run => run.LastMoveWasMistake && run.IsNearMiss)), slotsFull[12]);
             Assert.Equal(Text(fails.Count(run => run.LastMoveWasMistake)), slotsFull[14]);
-            Assert.Equal(Text(fails.Sum(run => run.Guesses.Or(new GuessTally(0, 0)).Right)), slotsFull[15]);
-            Assert.Equal(Text(fails.Sum(run => run.Guesses.Or(new GuessTally(0, 0)).Wrong)), slotsFull[16]);
-            Assert.True(fails.Sum(run => run.Guesses.Or(new GuessTally(0, 0)).Wrong) > 0, "The D3 level must show wrong guesses.");
+            Assert.Equal(Text(fails.Sum(run => run.Guesses.Or(GuessTally.None).Right)), slotsFull[15]);
+            Assert.Equal(Text(fails.Sum(run => run.Guesses.Or(GuessTally.None).Wrong)), slotsFull[16]);
+            Assert.True(fails.Sum(run => run.Guesses.Or(GuessTally.None).Wrong) > 0, "The D3 level must show wrong guesses.");
         }
 
         [Fact]
@@ -170,7 +191,7 @@ namespace PuzzleCore.Tests.Gen
             string[] lines = LotSimCsv.WriteFails(pack).Split('\n');
             List<string[]> rows = lines.Skip(1).Where(line => line.Length > 0).Select(line => line.Split(',')).ToList();
 
-            Assert.Equal(LotSimCsv.FailsHeader, lines[0]);
+            Assert.Equal("level_id,slot,profile,near_miss,cleared_tenth,fail_cause,losing_move_back,fails", lines[0]);
             Assert.All(rows, row => Assert.Equal(8, row.Length));
             Assert.All(rows, row => Assert.InRange(Number(row[4]), 0, 9));
             Assert.All(rows, row => Assert.True(Number(row[7]) > 0));
@@ -266,10 +287,42 @@ namespace PuzzleCore.Tests.Gen
             // Level ids are {packId}-{slot:0000} with at most 64 characters, so a 60-character pack id leaves no room.
             PackId longPack = PackId.Parse(new string('p', 60)).Or(default);
 
-            Assert.Throws<ArgumentOutOfRangeException>(() => LotSim.Run(CampaignLevels.Pack, 1, 0, withFailCauses: false));
-            Assert.Throws<ArgumentOutOfRangeException>(() => LotSim.Run(CampaignLevels.Pack, -1, 1, withFailCauses: false));
-            Assert.Throws<ArgumentException>(() => LotSim.Run(longPack, 1, 1, withFailCauses: false));
-            Assert.Empty(LotSim.Run(CampaignLevels.Pack, 0, 1, withFailCauses: false).Slots);
+            Assert.Equal("value", Assert.Throws<ArgumentOutOfRangeException>(() => new WorkerCount(0)).ParamName);
+            Assert.Equal("value", Assert.Throws<ArgumentOutOfRangeException>(() => new WorkerCount(-1)).ParamName);
+            Assert.Equal("count", Assert.Throws<ArgumentOutOfRangeException>(() => LotSim.FirstSlots(-1)).ParamName);
+            Assert.Equal("pack", Assert.Throws<ArgumentException>(() => LotSim.Build(longPack, LotSim.FirstSlots(1), new WorkerCount(1))).ParamName);
+            Assert.Empty(LotSim.Run(CampaignLevels.Pack, LotSim.FirstSlots(0), Settings(1, withFailCauses: false)).Slots);
+            Assert.Equal(Enumerable.Range(0, 3).Select(slot => new LevelIndex(slot)), LotSim.FirstSlots(3));
+        }
+
+        [Fact]
+        public void The_near_miss_budget_is_twenty_million_nodes_and_running_out_of_it_is_an_engine_fault()
+        {
+            // TC24: an Unknown near miss is an engine fault. A one-node budget runs out on the first fail.
+            SimSettings starved = Settings(2, withFailCauses: false) with { NearMissBudget = new NodeBudget(1) };
+
+            InvalidOperationException fault = Assert.Throws<InvalidOperationException>(
+                () => LotSim.Run(CampaignLevels.Pack, new[] { new LevelIndex(0) }, starved));
+
+            Assert.Equal(20_000_000, LotSim.NearMissBudget.Nodes);
+            Assert.Equal(LotSim.NearMissBudget, Settings(1, withFailCauses: false).NearMissBudget);
+            Assert.Contains("A near-miss solve ran out of its budget.", fault.Message, StringComparison.Ordinal);
+            Assert.StartsWith("Slot 0, Greedy, run ", fault.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Of_several_faults_sim_reports_the_first_in_work_order_whatever_the_number_of_workers()
+        {
+            // Every profile but Expert fails somewhere on these slots, so a one-node budget faults many work items.
+            SimSettings Starved(int workers) => Settings(workers, withFailCauses: false) with { NearMissBudget = new NodeBudget(1) };
+            LevelIndex[] slots = { new(24), new(0) };
+
+            string alone = Assert.Throws<InvalidOperationException>(() => LotSim.Run(CampaignLevels.Pack, slots, Starved(1))).Message;
+            string many = Assert.Throws<InvalidOperationException>(() => LotSim.Run(CampaignLevels.Pack, slots, Starved(8))).Message;
+
+            Assert.Equal(alone, many);
+            Assert.StartsWith("Slot 24, Greedy, run ", alone, StringComparison.Ordinal);
+            Assert.Contains(" other faults)", alone, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -312,6 +365,50 @@ namespace PuzzleCore.Tests.Gen
         }
 
         private static int Number(string text) => int.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+
+        private static SimSettings Settings(int workers, bool withFailCauses) => new(new WorkerCount(workers), withFailCauses);
+
+        private static bool Is<TNearMiss>(SimRun run) where TNearMiss : NearMiss => run.NearMiss.TryGet(out NearMiss? found) && found is TNearMiss;
+
+        /// <summary>Every field sim keeps of every run, one line per run in slot, profile and run order.</summary>
+        private static List<string> RunLines(SimPack pack) =>
+            (from level in pack.Simulated
+             from profile in level.Profiles
+             from run in profile.Runs
+             select string.Join(
+                 " ",
+                 Text(level.Slot.Value),
+                 profile.Profile.Name,
+                 Text(run.Run),
+                 BotNames.Of(run.EndReason),
+                 Text(run.Cleared.Value),
+                 run.NearMiss.TryGet(out NearMiss? nearMiss) ? SimNames.Of(nearMiss) : "-",
+                 Text(run.Mistakes),
+                 run.LastMoveWasMistake ? "1" : "0",
+                 run.Guesses.TryGet(out GuessTally? tally) ? Text(tally.Right) + "/" + Text(tally.Wrong) : "-",
+                 run.Cause.TryGet(out FailCause? cause) ? cause.ToString() : "-",
+                 string.Join(".", run.Moves.Select(move => Text(move.Piece.Value))))).ToList();
+
+        /// <summary>The files sim writes for the pack, by name, with their text.</summary>
+        private static List<(string Name, string Text)> FilesWritten(SimPack pack)
+        {
+            string directory = Path.Combine(Path.GetTempPath(), "puzzle-sim-files-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                LotSimFiles.Write(pack, directory);
+                return Directory.GetFiles(directory)
+                    .OrderBy(path => path, StringComparer.Ordinal)
+                    .Select(path => (Path.GetFileName(path), File.ReadAllText(path, Encoding.UTF8)))
+                    .ToList();
+            }
+            finally
+            {
+                if (Directory.Exists(directory))
+                {
+                    Directory.Delete(directory, recursive: true);
+                }
+            }
+        }
 
         private static SimProfileRuns Profile(SimSlot.Simulated level, BotProfileId id) =>
             level.Profiles.Single(profile => profile.Profile.Id == id);

@@ -56,10 +56,10 @@ namespace PuzzleCore.Tests.Bot
                             state = applied.Next;
                         }
 
-                        Assert.Equal(Option.Some(new GuessTally(replica.Right, replica.Wrong)), policy.Guesses);
+                        Assert.Equal(Option.Some(replica.Tally), policy.Guesses);
                         redraws += replica.Redraws;
                         keeps += replica.Keeps;
-                        guesses += replica.Right + replica.Wrong;
+                        guesses += replica.Tally.Right + replica.Tally.Wrong;
                     }
                 }
             }
@@ -149,7 +149,7 @@ namespace PuzzleCore.Tests.Bot
             }
 
             Assert.Equal(2, lifts);
-            Assert.Equal(Option.Some(new GuessTally(0, 0)), policy.Guesses);
+            Assert.Equal(Option.Some(GuessTally.None), policy.Guesses);
         }
 
         [Fact]
@@ -227,9 +227,7 @@ namespace PuzzleCore.Tests.Bot
                 _view = new ColourView(level);
             }
 
-            public int Right { get; private set; }
-
-            public int Wrong { get; private set; }
+            public GuessTally Tally { get; private set; } = GuessTally.None;
 
             public int Redraws { get; private set; }
 
@@ -275,8 +273,7 @@ namespace PuzzleCore.Tests.Bot
                     CoverColours read = _reading!.Covers.Single(cover => cover.Cover == lifted.Piece);
                     if (read.Colours.Count >= 2)
                     {
-                        Right += _view.Of(lifted.Piece) == lifted.Colour ? 1 : 0;
-                        Wrong += _view.Of(lifted.Piece) == lifted.Colour ? 0 : 1;
+                        Tally = Tally.After(wasRight: _view.Of(lifted.Piece) == lifted.Colour);
                     }
 
                     _seen = _seen.With(new HiddenCell(lifted.Piece.Value));

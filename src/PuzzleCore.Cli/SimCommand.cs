@@ -15,8 +15,9 @@ namespace PuzzleCore.Cli
     /// "sim &lt;packId&gt; &lt;count&gt; [outDir]" (Q84): plays slots 0..count-1 of a pack with Covered Lot's four bots, 200
     /// runs each (<see cref="LotSim"/>), and prints one line per slot: each profile's Won per mille, then Planner3's
     /// near-miss Yes per mille of its fails and its late fails per mille of its fails. With outDir it writes the two
-    /// reports and Planner3's sample records (<see cref="LotSimFiles"/>). Exit code 1 on an engine fault, 2 on bad
-    /// arguments; rejected slots are listed and are not faults.
+    /// reports and Planner3's sample records (<see cref="LotSimFiles"/>), creating the folder before the run so a bad path
+    /// fails at once. Exit code 1 on an engine fault, 2 on bad arguments, an output folder it cannot create or files it
+    /// cannot write; rejected slots are listed and are not faults.
     /// </summary>
     internal static class SimCommand
     {
@@ -34,11 +35,16 @@ namespace PuzzleCore.Cli
                 return 2;
             }
 
+            if (outDirectory is not null && !CanCreate(outDirectory, output))
+            {
+                return 2;
+            }
+
             Stopwatch clock = Stopwatch.StartNew();
             SimPack sim;
             try
             {
-                sim = LotSim.Run(pack, count, Environment.ProcessorCount, withFailCauses: true);
+                sim = LotSim.Run(pack, LotSim.FirstSlots(count), new SimSettings(WorkerCount.EveryProcessor, WithFailCauses: true));
             }
             catch (InvalidOperationException fault)
             {
@@ -51,15 +57,62 @@ namespace PuzzleCore.Cli
                 output.Write(Line(slot));
             }
 
-            if (outDirectory is not null)
+            if (outDirectory is not null && !Wrote(sim, outDirectory, output))
             {
-                LotSimFiles.Write(sim, outDirectory);
+                return 2;
             }
 
             output.Write(string.Concat(
                 "simulated ", Number(sim.Simulated.Count()), "/", Number(count), ", ",
                 clock.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture), " ms\n"));
             return 0;
+        }
+
+        /// <summary>Creates the output folder, or says why it cannot.</summary>
+        private static bool CanCreate(string directory, TextWriter output)
+        {
+            try
+            {
+                Directory.CreateDirectory(directory);
+                return true;
+            }
+            catch (IOException problem)
+            {
+                return Refused("cannot use the output folder " + directory, problem, output);
+            }
+            catch (UnauthorizedAccessException problem)
+            {
+                return Refused("cannot use the output folder " + directory, problem, output);
+            }
+            catch (ArgumentException problem)
+            {
+                return Refused("cannot use the output folder " + directory, problem, output);
+            }
+        }
+
+        /// <summary>Writes the reports and records, or says why it cannot.</summary>
+        private static bool Wrote(SimPack sim, string directory, TextWriter output)
+        {
+            try
+            {
+                LotSimFiles.Write(sim, directory);
+                return true;
+            }
+            catch (IOException problem)
+            {
+                return Refused("cannot write the reports to " + directory, problem, output);
+            }
+            catch (UnauthorizedAccessException problem)
+            {
+                return Refused("cannot write the reports to " + directory, problem, output);
+            }
+        }
+
+        /// <summary>One line for the user, without a stack trace; always false.</summary>
+        private static bool Refused(string what, Exception problem, TextWriter output)
+        {
+            output.Write(what + ": " + problem.Message + "\n");
+            return false;
         }
 
         private static string Line(SimSlot slot) => slot switch

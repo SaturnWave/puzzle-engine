@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using PuzzleCore.Bot;
 using PuzzleCore.Tests.Support;
 using Xunit;
@@ -10,29 +11,48 @@ namespace PuzzleCore.Tests.Guards
 {
     /// <summary>
     /// The bots' guards (Q75, TC21): the shared bot namespace stays free of game types, and among Covered Lot's bots only
-    /// the colour view, Greedy and Expert read a vehicle's own colour.
+    /// the colour view, Greedy and Expert read a vehicle's own colour or anything worked out from it.
     /// </summary>
     public sealed class BotGuardTests
     {
         private const string SharedNamespace = "PuzzleCore.Bot";
 
-        private static readonly string[] GameNamespaces = { "PuzzleCore.Jam", "PuzzleCore.Bot.Jam", "PuzzleCore.Sort" };
-
-        /// <summary>
-        /// What shows a hidden vehicle's own colour: the vehicle's colour, the canonical level text, and a move played by the
-        /// rules (its events and the bays after it show the colour). "*" is any member of the type.
-        /// </summary>
-        private static readonly (string Type, string Member)[] ColourRevealing =
-        {
-            ("PuzzleCore.Jam.Vehicle", "get_Colour"),
-            ("PuzzleCore.Jam.LotText", "*"),
-            ("PuzzleCore.Jam.JamRules", "TryApply"),
-            ("PuzzleCore.Rules.IPuzzleRules`3", "TryApply"),
-        };
+        // A game's types: Jam's and Sort's modules, and any namespace under PuzzleCore.Bot other than the shared root.
+        private static readonly Regex GameType = new(@"\bPuzzleCore\.(Jam|Sort)\.|\bPuzzleCore\.Bot\.\w+\.", RegexOptions.CultureInvariant);
 
         private static readonly string[] MayReadTrueColours =
         {
             "PuzzleCore.Bot.Jam.ColourView", "PuzzleCore.Bot.Jam.GreedyPolicy", "PuzzleCore.Bot.Jam.ExpertPolicy",
+        };
+
+        /// <summary>
+        /// What shows a hidden vehicle's own colour, or something worked out from it, and who else may use it. "*" is any
+        /// member of the type. Besides the listed callers, the colour view, Greedy and Expert may use all of them.
+        /// </summary>
+        private static readonly (string Type, string Member, string[] AlsoAllowed)[] ColourRevealing =
+        {
+            ("PuzzleCore.Jam.Vehicle", "get_Colour", Array.Empty<string>()),
+            ("PuzzleCore.Jam.Vehicle", "Equals", Array.Empty<string>()),
+            ("PuzzleCore.Jam.Vehicle", "op_Equality", Array.Empty<string>()),
+            ("PuzzleCore.Jam.Vehicle", "op_Inequality", Array.Empty<string>()),
+            ("PuzzleCore.Jam.LotText", "*", Array.Empty<string>()),
+            ("PuzzleCore.Jam.JamRules", "TryApply", Array.Empty<string>()),
+            ("PuzzleCore.Rules.IPuzzleRules`3", "TryApply", Array.Empty<string>()),
+            // A move played on the rules shows the lifted cover's colour: only the shared run loop plays them.
+            ("PuzzleCore.Play.Attempt`3", "Move", new[] { "PuzzleCore.Bot.BotRunner" }),
+            // Full-information solves and grades.
+            ("PuzzleCore.Play.FailAnalysis", "*", new[] { "PuzzleCore.Bot.BotRun`3" }),
+            ("PuzzleCore.Search.IPositionSolver`2", "*", Array.Empty<string>()),
+            ("PuzzleCore.Jam.LotSolver", "*", Array.Empty<string>()),
+            ("PuzzleCore.Jam.LotPositionSolver", "*", Array.Empty<string>()),
+            ("PuzzleCore.Play.Replay", "*", Array.Empty<string>()),
+            ("PuzzleCore.Jam.LotPlayouts", "*", Array.Empty<string>()),
+            ("PuzzleCore.Jam.LotFeatures", "*", Array.Empty<string>()),
+            ("PuzzleCore.Jam.LotGrades", "*", Array.Empty<string>()),
+            ("PuzzleCore.Jam.BuiltLevel", "get_ParPath", new[] { "PuzzleCore.Bot.Jam.LotBots" }),
+            // Greedy and Expert read true colours, so what they work out may reach no other bot.
+            ("PuzzleCore.Bot.Jam.GreedyPolicy", "*", new[] { "PuzzleCore.Bot.Jam.LotBots" }),
+            ("PuzzleCore.Bot.Jam.ExpertPolicy", "*", new[] { "PuzzleCore.Bot.Jam.LotBots" }),
         };
 
         [Fact]
@@ -47,39 +67,43 @@ namespace PuzzleCore.Tests.Guards
         }
 
         [Fact]
-        public void The_shared_bot_namespace_calls_no_game_member()
+        public void The_shared_bot_namespace_mentions_no_game_type_in_its_code()
         {
+            // Calls, typeof, is, casts, locals and generic arguments: every type a method body names.
             using var inspection = new AssemblyInspection(RepositoryLayout.UnityBoundAssemblyPath("PuzzleCore.Bot"));
-            IReadOnlyList<MemberReferenceSite> sites = inspection.MemberReferences();
+            IReadOnlyList<(string CallerType, string Type)> mentions = inspection.TypeMentions();
 
-            IEnumerable<MemberReferenceSite> fromShared = sites.Where(site => NamespaceOf(site.CallerType) == SharedNamespace && IsGameTypeName(site.DeclaringType));
+            IEnumerable<string> fromShared = mentions
+                .Where(mention => NamespaceOf(mention.CallerType) == SharedNamespace && GameType.IsMatch(mention.Type))
+                .Select(mention => mention.CallerType + " mentions " + mention.Type);
 
             Assert.Empty(fromShared);
-            Assert.Contains(sites, site => NamespaceOf(site.CallerType) == "PuzzleCore.Bot.Jam" && IsGameTypeName(site.DeclaringType));
+            Assert.Contains(mentions, mention => mention.CallerType == "PuzzleCore.Bot.Jam.PlannerPolicy" && mention.Type == "PuzzleCore.Jam.LotState");
+            Assert.Contains(mentions, mention => mention.CallerType == "PuzzleCore.Bot.BotRunner" && mention.Type.StartsWith("PuzzleCore.Play.Attempt`3", StringComparison.Ordinal));
         }
 
         [Fact]
         public void Only_the_colour_view_greedy_and_expert_read_a_vehicles_own_colour()
         {
             using var inspection = new AssemblyInspection(RepositoryLayout.UnityBoundAssemblyPath("PuzzleCore.Bot"));
-            List<MemberReferenceSite> revealing = inspection.MemberReferences().Where(Reveals).ToList();
+            List<(MemberReferenceSite Site, string[] AlsoAllowed)> revealing = inspection.MemberReferences()
+                .Select(site => (Site: site, Rule: ColourRevealing.FirstOrDefault(rule => rule.Type == site.DeclaringType && (rule.Member == "*" || rule.Member == site.MemberName))))
+                .Where(found => found.Rule.Type is not null)
+                .Select(found => (found.Site, found.Rule.AlsoAllowed))
+                .ToList();
 
-            Assert.Empty(revealing.Where(site => !MayReadTrueColoursFrom(site.CallerType)).Select(site => site.ToString()));
-            Assert.Contains(revealing, site => site.CallerType == "PuzzleCore.Bot.Jam.ColourView");
-            Assert.Contains(revealing, site => site.CallerType == "PuzzleCore.Bot.Jam.GreedyPolicy");
+            Assert.Empty(revealing.Where(found => !MayUse(found.Site.CallerType, found.AlsoAllowed)).Select(found => found.Site.ToString()));
+            Assert.Contains(revealing, found => found.Site.CallerType == "PuzzleCore.Bot.Jam.ColourView" && found.Site.MemberName == "get_Colour");
+            Assert.Contains(revealing, found => found.Site.CallerType == "PuzzleCore.Bot.Jam.GreedyPolicy" && found.Site.MemberName == "get_Colour");
+            Assert.Contains(revealing, found => found.Site.CallerType == "PuzzleCore.Bot.BotRunner" && found.Site.MemberName == "Move");
+            Assert.Contains(revealing, found => found.Site.CallerType == "PuzzleCore.Bot.Jam.LotBots" && found.Site.MemberName == "get_ParPath");
         }
 
-        private static bool Reveals(MemberReferenceSite site) =>
-            ColourRevealing.Any(member => member.Type == site.DeclaringType && (member.Member == "*" || member.Member == site.MemberName));
+        /// <summary>The colour view, Greedy, Expert and the rule's own callers, or a type nested in one (a lambda's closure class).</summary>
+        private static bool MayUse(string callerType, string[] alsoAllowed) =>
+            MayReadTrueColours.Concat(alsoAllowed).Any(allowed => callerType == allowed || callerType.StartsWith(allowed + "+", StringComparison.Ordinal));
 
-        /// <summary>The type itself or a type nested in it, such as a lambda's closure class.</summary>
-        private static bool MayReadTrueColoursFrom(string callerType) =>
-            MayReadTrueColours.Any(allowed => callerType == allowed || callerType.StartsWith(allowed + "+", StringComparison.Ordinal));
-
-        private static bool IsGameType(Type type) => type.FullName is string name && IsGameTypeName(name);
-
-        private static bool IsGameTypeName(string typeName) =>
-            GameNamespaces.Any(game => typeName.StartsWith(game + ".", StringComparison.Ordinal));
+        private static bool IsGameType(Type type) => type.FullName is string name && GameType.IsMatch(name);
 
         /// <summary>The namespace of a type named as the IL reports it ("A.B.Outer+Nested" is in "A.B").</summary>
         private static string NamespaceOf(string typeName)
@@ -89,7 +113,10 @@ namespace PuzzleCore.Tests.Guards
             return dot < 0 ? string.Empty : outer.Substring(0, dot);
         }
 
-        /// <summary>Every type a type's own declarations name: base, interfaces, fields, properties, events and methods.</summary>
+        /// <summary>
+        /// Every type a type's own declarations name: base, interfaces, the constraints on its generic parameters, fields,
+        /// properties, events and methods, with their generic parameters' constraints.
+        /// </summary>
         private static IEnumerable<Type> TypesInSignaturesOf(Type type)
         {
             const BindingFlags Declared = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
@@ -100,6 +127,11 @@ namespace PuzzleCore.Tests.Guards
             }
 
             named.AddRange(type.GetInterfaces());
+            if (type.IsGenericTypeDefinition)
+            {
+                named.AddRange(type.GetGenericArguments().SelectMany(argument => argument.GetGenericParameterConstraints()));
+            }
+
             named.AddRange(type.GetFields(Declared).Select(field => field.FieldType));
             named.AddRange(type.GetProperties(Declared).Select(property => property.PropertyType));
             named.AddRange(type.GetEvents(Declared).Select(declared => declared.EventHandlerType).OfType<Type>());

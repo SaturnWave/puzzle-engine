@@ -30,13 +30,13 @@ namespace PuzzleCore.Gen
     public static class LotSimCsv
     {
         public const string Header =
-            "level_id,slot,kind,rung,profile,end_reason,runs,near_miss_yes,near_miss_no,near_miss_spare_unavailable,near_miss_unknown,"
+            "level_id,slot,kind,rung,profile,bot_end_reason,runs,near_miss_yes,near_miss_no,near_miss_spare_unavailable,near_miss_unknown,"
             + "near_miss_yes_permille,last_move_mistake_near_miss_yes,runs_with_mistake,last_move_mistake,guesses_right,guesses_wrong";
 
         public const string FailsHeader = "level_id,slot,profile,near_miss,cleared_tenth,fail_cause,losing_move_back,fails";
 
-        private static readonly BotEndReason[] EndReasons =
-            { BotEndReason.Won, BotEndReason.NoLegalMove, BotEndReason.SlotsFull, BotEndReason.Cycle, BotEndReason.StepCap };
+        // Every reason in the closed set, in its fixed order, whether a run ended that way or not (Q81).
+        private static readonly BotEndReason[] EndReasons = Enum.GetValues<BotEndReason>();
 
         public static string Write(SimPack pack)
         {
@@ -84,7 +84,7 @@ namespace PuzzleCore.Gen
         private static string[] Fields(SimSlot.Simulated level, SimProfileRuns profile, BotEndReason reason)
         {
             List<SimRun> runs = profile.Runs.Where(run => run.EndReason == reason).ToList();
-            bool isFail = reason is BotEndReason.SlotsFull or BotEndReason.NoLegalMove;
+            bool isFail = LotSim.IsFail(reason);
             bool guesses = profile.Runs.Count > 0 && profile.Runs[0].Guesses.HasValue;
             return new[]
             {

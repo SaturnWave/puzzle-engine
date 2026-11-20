@@ -208,6 +208,28 @@ namespace PuzzleCore.Tests.Support
         }
 
         /// <summary>
+        /// Every type that every method body mentions, with the type that holds the method: the types its instructions
+        /// name (typeof, is, as, casts, box, newarr, initobj, constrained. and the like), the declaring types and
+        /// signatures of the members it names, a generic method's type arguments, and its locals. Each type is given as
+        /// <see cref="TypeShape.Display"/>, generic arguments and array elements included, so a guard can look inside them.
+        /// </summary>
+        public IReadOnlyList<(string CallerType, string Type)> TypeMentions()
+        {
+            var found = new List<(string CallerType, string Type)>();
+            foreach (MethodDefinitionHandle methodHandle in AllMethods())
+            {
+                string callerType = FullName(_reader.GetMethodDefinition(methodHandle).GetDeclaringType());
+                IEnumerable<TypeShape> mentioned = Instructions(methodHandle)
+                    .Where(instruction => !instruction.Operand.IsNil)
+                    .SelectMany(instruction => TypesNamedBy(instruction.Operand))
+                    .Concat(LocalTypes(methodHandle));
+                found.AddRange(mentioned.Select(type => (callerType, type.Display)));
+            }
+
+            return found.Distinct().ToList();
+        }
+
+        /// <summary>
         /// Catch blocks that swallow everything (catch (Exception), a bare catch, or such a catch
         /// with a when-filter) and catch blocks with an empty body (CLAUDE.md, rule 6).
         /// </summary>
@@ -478,6 +500,40 @@ namespace PuzzleCore.Tests.Support
                         .Concat(ExternalTypesOf(specification.Method));
                 default:
                     return Array.Empty<string>();
+            }
+        }
+
+        /// <summary>The types an IL operand names: the type itself, or a member's declaring type and signature, with any type arguments.</summary>
+        private IEnumerable<TypeShape> TypesNamedBy(EntityHandle operand)
+        {
+            switch (operand.Kind)
+            {
+                case HandleKind.TypeReference:
+                case HandleKind.TypeSpecification:
+                case HandleKind.TypeDefinition:
+                    return new[] { ShapeOf(operand) };
+                case HandleKind.MemberReference:
+                    MemberReference member = _reader.GetMemberReference((MemberReferenceHandle)operand);
+                    TypeShape parent = ShapeOfParent(member.Parent);
+                    if (member.GetKind() == MemberReferenceKind.Field)
+                    {
+                        return new[] { parent, member.DecodeFieldSignature(_shapes, null) };
+                    }
+
+                    MethodSignature<TypeShape> signature = member.DecodeMethodSignature(_shapes, null);
+                    return signature.ParameterTypes.Append(signature.ReturnType).Append(parent);
+                case HandleKind.MethodSpecification:
+                    MethodSpecification specification = _reader.GetMethodSpecification((MethodSpecificationHandle)operand);
+                    return specification.DecodeSignature(_shapes, null).Concat(TypesNamedBy(specification.Method));
+                case HandleKind.MethodDefinition:
+                    MethodDefinition definition = _reader.GetMethodDefinition((MethodDefinitionHandle)operand);
+                    MethodSignature<TypeShape> own = definition.DecodeSignature(_shapes, null);
+                    return own.ParameterTypes.Append(own.ReturnType).Append(ShapeOfDefinition(definition.GetDeclaringType()));
+                case HandleKind.FieldDefinition:
+                    FieldDefinition field = _reader.GetFieldDefinition((FieldDefinitionHandle)operand);
+                    return new[] { ShapeOfDefinition(field.GetDeclaringType()), field.DecodeSignature(_shapes, null) };
+                default:
+                    return Array.Empty<TypeShape>();
             }
         }
 

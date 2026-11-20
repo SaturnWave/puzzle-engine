@@ -26,11 +26,11 @@ namespace PuzzleCore.Bot.Jam
         /// <summary>The line wins: every vehicle has left.</summary>
         public static LineScore Won { get; } = new LineScore(WonValue);
 
-        /// <summary>The line ends with the level still in play.</summary>
-        public static LineScore InPlay(int baysInUse, int coloursWaiting) => new(InPlayBand + WithinBand(baysInUse, coloursWaiting));
+        /// <summary>The line ends at the position with the level still in play.</summary>
+        public static LineScore InPlay(LotPosition end) => new(InPlayBand + WithinBand(end));
 
-        /// <summary>The line fills every bay: the rules' SlotsFull.</summary>
-        public static LineScore BaysFull(int baysInUse, int coloursWaiting) => new(BaysFullBand + WithinBand(baysInUse, coloursWaiting));
+        /// <summary>The line ends at the position with every bay full: the rules' SlotsFull.</summary>
+        public static LineScore BaysFull(LotPosition end) => new(BaysFullBand + WithinBand(end));
 
         public int CompareTo(LineScore other) => _value.CompareTo(other._value);
 
@@ -52,20 +52,9 @@ namespace PuzzleCore.Bot.Jam
 
         public static bool operator >=(LineScore left, LineScore right) => left._value >= right._value;
 
-        private static int WithinBand(int baysInUse, int coloursWaiting)
-        {
-            if (baysInUse < 0 || baysInUse > BayCount.PackingLimit)
-            {
-                throw new ArgumentOutOfRangeException(nameof(baysInUse), baysInUse, "A lot has 0 to 8 bays in use.");
-            }
-
-            if (coloursWaiting < 0 || coloursWaiting > ColourId.MaxValue)
-            {
-                throw new ArgumentOutOfRangeException(nameof(coloursWaiting), coloursWaiting, "At most 15 colours can wait.");
-            }
-
-            return ((BayCount.PackingLimit - baysInUse) * ColourSteps) + (ColourId.MaxValue - coloursWaiting);
-        }
+        /// <summary>A position has at most PackingLimit bays, so both parts stay within the band.</summary>
+        private static int WithinBand(LotPosition end) =>
+            ((BayCount.PackingLimit - end.BaysInUse) * ColourSteps) + (ColourId.MaxValue - end.ColoursWaiting);
     }
 
     /// <summary>
@@ -115,12 +104,12 @@ namespace PuzzleCore.Bot.Jam
 
             if (position.BaysFull)
             {
-                return LineScore.BaysFull(position.BaysInUse, position.ColoursWaiting);
+                return LineScore.BaysFull(position);
             }
 
             if (movesLeft == 0)
             {
-                return LineScore.InPlay(position.BaysInUse, position.ColoursWaiting);
+                return LineScore.InPlay(position);
             }
 
             Option<LineScore> best = Option.None<LineScore>();

@@ -19,23 +19,22 @@ namespace PuzzleCore.Tests.Bot
         [Fact]
         public void A_win_ranks_first_then_lines_in_play_then_lines_that_fill_the_bays()
         {
-            Assert.True(LineScore.Won > LineScore.InPlay(0, 0));
-            Assert.True(LineScore.InPlay(8, 15) > LineScore.BaysFull(0, 0));
-            Assert.True(LineScore.InPlay(2, 2) > LineScore.InPlay(3, 1));
-            Assert.True(LineScore.InPlay(3, 1) > LineScore.InPlay(3, 2));
-            Assert.True(LineScore.BaysFull(4, 2) > LineScore.BaysFull(4, 3));
-            Assert.True(LineScore.BaysFull(4, 3) > LineScore.BaysFull(5, 1));
-            Assert.Equal(LineScore.InPlay(3, 2), LineScore.InPlay(3, 2));
-            Assert.NotEqual(LineScore.InPlay(3, 2), LineScore.BaysFull(3, 2));
-        }
+            // The free-cars board, B R Y three times (pieces 0 B, 1 R, 2 Y, 3 B, 4 R, ...), every car free.
+            LotPosition blueRed = Parked(4, 0, 1);
+            LotPosition blueBlue = Parked(4, 0, 3);
+            LotPosition blueBlueRed = Parked(4, 0, 3, 1);
+            LotPosition fullOfTwoColours = Parked(4, 0, 3, 1, 4);
+            LotPosition fullOfThreeColours = Parked(4, 0, 3, 1, 2);
+            LotPosition fiveBaysFull = Parked(5, 0, 3, 1, 4, 2);
 
-        [Fact]
-        public void A_line_ends_with_0_to_8_bays_in_use_and_at_most_15_colours_waiting()
-        {
-            Assert.Throws<ArgumentOutOfRangeException>(() => LineScore.InPlay(9, 1));
-            Assert.Throws<ArgumentOutOfRangeException>(() => LineScore.BaysFull(-1, 0));
-            Assert.Throws<ArgumentOutOfRangeException>(() => LineScore.InPlay(4, 16));
-            Assert.Throws<ArgumentOutOfRangeException>(() => LineScore.BaysFull(4, -1));
+            Assert.True(LineScore.Won > LineScore.InPlay(Parked(4)));
+            Assert.True(LineScore.InPlay(blueBlueRed) > LineScore.BaysFull(fullOfTwoColours));
+            Assert.True(LineScore.InPlay(blueRed) > LineScore.InPlay(blueBlueRed));
+            Assert.True(LineScore.InPlay(blueBlue) > LineScore.InPlay(blueRed));
+            Assert.True(LineScore.BaysFull(fullOfTwoColours) > LineScore.BaysFull(fullOfThreeColours));
+            Assert.True(LineScore.BaysFull(fullOfThreeColours) > LineScore.BaysFull(fiveBaysFull));
+            Assert.Equal(LineScore.InPlay(blueRed), LineScore.InPlay(Parked(4, 1, 0)));
+            Assert.NotEqual(LineScore.InPlay(fullOfTwoColours), LineScore.BaysFull(fullOfTwoColours));
         }
 
         [Theory]
@@ -135,6 +134,20 @@ namespace PuzzleCore.Tests.Bot
 
             Assert.Throws<ArgumentOutOfRangeException>(() => Lookahead.BestFirstMoves(
                 new LotModel(level), TrueColours(level), LotPosition.Of(LotState.Start(level)), new MoveCount(0), legal, new List<Exit>()));
+        }
+
+        /// <summary>The free-cars board with these bays, after the given cars parked in order.</summary>
+        private static LotPosition Parked(int bays, params int[] pieces)
+        {
+            LotLevel level = Load(FreeCars(bays, Blue, Red, Yellow, Blue, Red, Yellow, Blue, Red, Yellow));
+            LotPosition position = LotPosition.Of(LotState.Start(level));
+            foreach (int piece in pieces)
+            {
+                var id = new PieceId((byte)piece);
+                position = position.After(id, level.VehicleOf(id).Colour);
+            }
+
+            return position;
         }
 
         /// <summary>A view that believes every cover's true colour.</summary>

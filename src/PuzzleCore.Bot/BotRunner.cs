@@ -45,7 +45,8 @@ namespace PuzzleCore.Bot
 
         public override bool Equals(object? obj) => obj is BotStep<TMove> other && Equals(other);
 
-        public override int GetHashCode() => (Move.GetHashCode() * 2) + (WasMistake ? 1 : 0);
+        // Hash mixing wraps on purpose: a game's move may hash to any int (shared-design.md §3).
+        public override int GetHashCode() => unchecked((Move.GetHashCode() * 2) + (WasMistake ? 1 : 0));
 
         public static bool operator ==(BotStep<TMove> left, BotStep<TMove> right) => left.Equals(right);
 
