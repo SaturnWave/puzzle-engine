@@ -26,22 +26,11 @@ namespace PuzzleCore.Bot.Jam
 
         public override Exit Intend(LotState state, IReadOnlyList<Exit> legal, Pcg32 random)
         {
-            int played = MovesPlayed(state.Exited);
+            // Every move sends one vehicle out, so the moves played are the vehicles gone.
+            int played = state.ExitedCount;
             return played < _parPath.Count
                 ? _parPath[played]
                 : throw new InvalidOperationException("The par path ended with the level still in play.");
-        }
-
-        /// <summary>Every move sends one vehicle out, so the moves played are the vehicles gone.</summary>
-        private static int MovesPlayed(uint exited)
-        {
-            int moves = 0;
-            for (uint left = exited; left != 0; left &= left - 1)
-            {
-                moves++;
-            }
-
-            return moves;
         }
     }
 }

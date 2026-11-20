@@ -37,8 +37,8 @@ namespace PuzzleCore.Tests.Bot
         [Fact]
         public void Greedy_picks_exactly_the_best_moves_of_the_habit_gen_measured_greedy_win_with()
         {
-            // Q80: the habit as LotPlayouts.GreedyWins plays it, written out here as the oracle: count the colours in the
-            // bays slot by slot, and keep the free vehicles whose colour has the highest count.
+            // Q80: the habit as LotPlayouts.GreedyWins played it before the Greedy bot replaced it, written out here as the
+            // oracle: count the colours in the bays slot by slot, and keep the free vehicles whose colour has the highest count.
             int positions = 0;
             var habit = new List<Exit>();
             var best = new List<Exit>();

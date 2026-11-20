@@ -19,7 +19,7 @@ namespace PuzzleCore.Tests.Support
                 ["PuzzleCore.Jam"] = new[] { "PuzzleCore" },
                 ["PuzzleCore.Bot"] = new[] { "PuzzleCore", "PuzzleCore.Jam" },
                 ["PuzzleCore.Gen"] = new[] { "PuzzleCore", "PuzzleCore.Jam", "PuzzleCore.Bot" },
-                ["PuzzleCore.Cli"] = new[] { "PuzzleCore", "PuzzleCore.Jam", "PuzzleCore.Gen" },
+                ["PuzzleCore.Cli"] = new[] { "PuzzleCore", "PuzzleCore.Jam", "PuzzleCore.Bot", "PuzzleCore.Gen" },
             };
 
         /// <summary>The compiled file of each project.</summary>

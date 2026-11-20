@@ -50,6 +50,21 @@ namespace PuzzleCore.Jam
 
         public bool HasExited(PieceId piece) => (Exited & (1U << piece.Value)) != 0;
 
+        /// <summary>How many vehicles have left the lot: every move sends one out.</summary>
+        public int ExitedCount
+        {
+            get
+            {
+                int count = 0;
+                for (uint left = Exited; left != 0; left &= left - 1)
+                {
+                    count++;
+                }
+
+                return count;
+            }
+        }
+
         /// <summary>The colour waiting in a bay, or None when the bay is empty.</summary>
         public Option<ColourId> ColourIn(SlotIndex slot)
         {

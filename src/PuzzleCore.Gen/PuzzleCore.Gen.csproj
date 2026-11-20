@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Offline tooling, never shipped in the app: the grading report and the files gen writes (P4), and the pack
-       writer (P7). The CLI calls it; tests reach it directly. -->
+  <!-- Offline tooling, never shipped in the app: the grading report and the files gen writes (P4), sim's driver and
+       reports (P5), and the pack writer (P7). The CLI calls it; tests reach it directly. -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>PuzzleCore.Gen</RootNamespace>
@@ -8,5 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="..\PuzzleCore\PuzzleCore.csproj" />
     <ProjectReference Include="..\PuzzleCore.Jam\PuzzleCore.Jam.csproj" />
+    <ProjectReference Include="..\PuzzleCore.Bot\PuzzleCore.Bot.csproj" />
   </ItemGroup>
 </Project>

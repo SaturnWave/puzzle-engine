@@ -4,7 +4,7 @@ namespace PuzzleCore.Cli
 {
     internal static class Program
     {
-        private const string Usage = "usage:\n  PuzzleCore.Cli demo\n  PuzzleCore.Cli replay <level.pc-lot> <record.json>\n  PuzzleCore.Cli gen <packId> <count> [outDir]\n  PuzzleCore.Cli rungs <packPrefix> <packCount> <slotCount>\n";
+        private const string Usage = "usage:\n  PuzzleCore.Cli demo\n  PuzzleCore.Cli replay <level.pc-lot> <record.json>\n  PuzzleCore.Cli gen <packId> <count> [outDir]\n  PuzzleCore.Cli sim <packId> <count> [outDir]\n  PuzzleCore.Cli rungs <packPrefix> <packCount> <slotCount>\n";
 
         private static int Main(string[] arguments)
         {
@@ -21,6 +21,11 @@ namespace PuzzleCore.Cli
             if ((arguments.Length == 3 || arguments.Length == 4) && arguments[0] == "gen")
             {
                 return GenCommand.Run(arguments[1], arguments[2], arguments.Length == 4 ? arguments[3] : null, Console.Out);
+            }
+
+            if ((arguments.Length == 3 || arguments.Length == 4) && arguments[0] == "sim")
+            {
+                return SimCommand.Run(arguments[1], arguments[2], arguments.Length == 4 ? arguments[3] : null, Console.Out);
             }
 
             if (arguments.Length == 4 && arguments[0] == "rungs")

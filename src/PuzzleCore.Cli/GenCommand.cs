@@ -13,14 +13,13 @@ namespace PuzzleCore.Cli
     /// <summary>
     /// "gen &lt;packId&gt; &lt;count&gt; [outDir]": builds and grades campaign slots 0..count-1 of a pack through
     /// <see cref="LotGrading"/> and prints one line per slot: size, vehicles, bays, PeakPar, slack, the random-play fail
-    /// rate (DeadEnd), the greedy-habit win rate and, on covered levels, covers, tags and the deduction grade. With
+    /// rate (DeadEnd), GreedyWinPerMille (the Greedy bot's wins over its 200 sim runs, Q80) and, on covered levels, covers,
+    /// tags and the deduction grade. With
     /// outDir it writes &lt;levelId&gt;.pc-lot for each level, then &lt;packId&gt;.presentation.json and
     /// &lt;packId&gt;.grades.csv (<see cref="LotPackFiles"/>). Exit code 1 if any slot was rejected.
     /// </summary>
     internal static class GenCommand
     {
-        private const int GreedyPlayouts = 200;
-
         public static int Run(string packText, string countText, string? outDirectory, TextWriter output)
         {
             if (!PackId.Parse(packText).TryGet(out PackId pack) || !int.TryParse(countText, NumberStyles.None, CultureInfo.InvariantCulture, out int count))
@@ -71,7 +70,7 @@ namespace PuzzleCore.Cli
                 Number(lot.Slot.Value).PadLeft(4), "  ", level.Size.ToString(), "  n=", Number(level.VehicleCount),
                 "  bays=", level.Bays.ToString(), "  peakPar=", lot.Built.PeakPar.ToString(), "  slack=", Number(lot.Built.Slack),
                 "  randomFail=", Number(lot.Grade.Plan.DeadEnd.Value / 10), "%",
-                "  greedyWin=", Number(LotPlayouts.GreedyWins(level, pack, lot.Slot, GreedyPlayouts).Value / 10), "%");
+                "  greedyWin=", Number(LotSim.GreedyWinPerMille(pack, lot.Slot, lot.Built).Value / 10), "%");
             if (lot.Grade.Deduction.TryGet(out DeductionGrade.Graded? grade))
             {
                 line += string.Concat(
