@@ -289,7 +289,9 @@ namespace PuzzleCore.Tests.Gen
 
             Assert.Equal("value", Assert.Throws<ArgumentOutOfRangeException>(() => new WorkerCount(0)).ParamName);
             Assert.Equal("value", Assert.Throws<ArgumentOutOfRangeException>(() => new WorkerCount(-1)).ParamName);
-            Assert.Equal("count", Assert.Throws<ArgumentOutOfRangeException>(() => LotSim.FirstSlots(-1)).ParamName);
+            ArgumentOutOfRangeException negative = Assert.Throws<ArgumentOutOfRangeException>(() => LotSim.FirstSlots(-1));
+            Assert.Equal("count", negative.ParamName);
+            Assert.StartsWith("A slot count is never negative.", negative.Message, StringComparison.Ordinal);
             Assert.Equal("pack", Assert.Throws<ArgumentException>(() => LotSim.Build(longPack, LotSim.FirstSlots(1), new WorkerCount(1))).ParamName);
             Assert.Empty(LotSim.Run(CampaignLevels.Pack, LotSim.FirstSlots(0), Settings(1, withFailCauses: false)).Slots);
             Assert.Equal(Enumerable.Range(0, 3).Select(slot => new LevelIndex(slot)), LotSim.FirstSlots(3));

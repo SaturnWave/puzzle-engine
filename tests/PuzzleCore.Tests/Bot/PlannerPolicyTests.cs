@@ -153,6 +153,16 @@ namespace PuzzleCore.Tests.Bot
         }
 
         [Fact]
+        public void A_tally_counts_each_guess_as_right_or_wrong()
+        {
+            GuessTally tally = GuessTally.None.After(wasRight: true).After(wasRight: false).After(wasRight: false);
+
+            Assert.Equal((0, 0), (GuessTally.None.Right, GuessTally.None.Wrong));
+            Assert.Equal((1, 2), (tally.Right, tally.Wrong));
+            Assert.Equal(GuessTally.None.After(wasRight: false).After(wasRight: true), GuessTally.None.After(wasRight: true).After(wasRight: false));
+        }
+
+        [Fact]
         public void A_planner_believes_what_it_sees_and_has_no_belief_about_a_cover_before_its_first_move()
         {
             LotLevel level = Load(SixBySix());
