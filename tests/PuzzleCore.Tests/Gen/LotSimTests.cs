@@ -17,13 +17,13 @@ using Xunit;
 namespace PuzzleCore.Tests.Gen
 {
     /// <summary>
-    /// sim's driver and reports (Q81, Q84, TC21, TC24) on five calibration slots: a plain level (0), covered levels read
-    /// at D1 (24), D2 (44) and D3 (64), so the Planners both read every cover and guess, and slot 62, which the builder
-    /// rejects.
+    /// sim's driver and reports (Q81, Q84, TC21, TC24) on five calibration slots, given out of order: a plain level (0),
+    /// slot 62, which the builder rejects, and covered levels read at D1 (24), D2 (44) and D3 (64), so the Planners both
+    /// read every cover and guess.
     /// </summary>
     public sealed class LotSimTests
     {
-        private static readonly LevelIndex[] Sample = { new(0), new(24), new(44), new(62), new(64) };
+        private static readonly LevelIndex[] Sample = { new(0), new(62), new(24), new(44), new(64) };
 
         private static readonly Lazy<SimPack> Simulated = new(() => LotSim.Run(CampaignLevels.Pack, Sample, 4, withFailCauses: true));
 
@@ -33,7 +33,7 @@ namespace PuzzleCore.Tests.Gen
             SimPack pack = Simulated.Value;
 
             Assert.Equal(Sample, pack.Slots.Select(slot => slot.Slot));
-            Assert.IsType<SimSlot.Rejected>(pack.Slots[3]);
+            Assert.IsType<SimSlot.Rejected>(pack.Slots[1]);
             Assert.Equal(new[] { 0, 24, 44, 64 }, pack.Simulated.Select(level => level.Slot.Value));
             foreach (SimSlot.Simulated level in pack.Simulated)
             {
@@ -187,12 +187,36 @@ namespace PuzzleCore.Tests.Gen
                     Assert.Equal(profile.Fails, own.Sum(row => Number(row[7])));
                     Assert.Equal(profile.LateFails, own.Where(row => Number(row[4]) >= 7).Sum(row => Number(row[7])));
                     Assert.Equal(profile.NearMisses, own.Where(row => row[3] == "Yes").Sum(row => Number(row[7])));
+                    for (int tenth = 0; tenth < 10; tenth++)
+                    {
+                        Assert.Equal(
+                            profile.Runs.Count(run => run.Failed && run.Cleared.Value / 100 == tenth),
+                            own.Where(row => Number(row[4]) == tenth).Sum(row => Number(row[7])));
+                    }
                     Assert.Equal(keys.OrderBy(key => key), keys);
                     Assert.Equal(keys.Count, keys.Distinct().Count());
                 }
             }
 
             Assert.Contains(rows, row => row[2] == "Planner3" && row[6].Length > 0);
+        }
+
+        [Fact]
+        public void A_fail_is_counted_in_the_tenth_of_its_cleared_permille()
+        {
+            // Every calibration level has five bays, so its fails stop at cleared values that never test the edges of a
+            // tenth; copies of one fail with chosen values do: 0-99 is tenth 0, 100 is tenth 1, 904 is tenth 9.
+            SimPack pack = Simulated.Value;
+            SimSlot.Simulated level = pack.Simulated.First();
+            SimProfileRuns greedy = Profile(level, BotProfileId.Greedy);
+            SimRun fail = greedy.Runs.First(run => run.Failed);
+            SimRun[] runs = { fail with { Cleared = new PerMille(904) }, fail with { Cleared = new PerMille(99) }, fail with { Cleared = new PerMille(100) } };
+            var chosen = new SimPack(pack.Pack, ReadOnlyArray.Of<SimSlot>(level with { Profiles = ReadOnlyArray.Of(greedy with { Runs = ReadOnlyArray.CopyOf(runs) }) }));
+
+            List<string[]> rows = LotSimCsv.WriteFails(chosen).Split('\n').Skip(1).Where(line => line.Length > 0).Select(line => line.Split(',')).ToList();
+
+            Assert.Equal(new[] { "0", "1", "9" }, rows.Select(row => row[4]));
+            Assert.All(rows, row => Assert.Equal("1", row[7]));
         }
 
         [Fact]
@@ -208,6 +232,9 @@ namespace PuzzleCore.Tests.Gen
             ReplayReport report = Replay.Run(rules, rules.Start, reread.Mode, reread.Actions);
 
             Assert.Equal(LotText.Fingerprint(level.Built.Level), reread.Level.Fingerprint.Hex);
+            Assert.Equal((GameKind.Jam, PlayMode.Campaign, LotText.RulesVersion), (reread.Game, reread.Mode, reread.RulesVersion));
+            Assert.Equal((pack.Pack, level.Id), (reread.Level.Pack, reread.Level.Level));
+            Assert.All(reread.Actions, action => Assert.Equal(new ElapsedMs(0), action.SincePrevious));
             var valid = Assert.IsType<ReplayVerdict.Valid>(report.Verdict);
             Assert.Equal(new Outcome.Failed(FailKind.SlotsFull), valid.Outcome);
             Assert.Equal(new MoveCount(failed.Moves.Count), valid.Moves);
