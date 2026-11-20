@@ -4,7 +4,7 @@ This file is the one copy of the design that Covered Lot and Sealed Vials share:
 
 - **Changes:** small and additive, merged as soon as their checks pass (Q53). Some changes need the user's approval first; "Contracts" under "Coordination between the two sessions" lists them.
 - **Sketches:** a phase that changes a type sketched here updates the sketch in the same branch.
-- **Ids:** decision ids (Q1-Q61, TC1-TC19, U1-U10) are those in Appendix A of Covered Lot's plan, `CoveredLot/docs/development-plan.md`. Phase ids (P0-P19, W1, W2) are that plan's phases, unless a line names the Sealed Vials plan.
+- **Ids:** decision ids (Q1-Q84, TC1-TC27, U1-U10) are those in Appendix A of Covered Lot's plan, `CoveredLot/docs/development-plan.md`. Phase ids (P0-P19, W1, W2) are that plan's phases, unless a line names the Sealed Vials plan.
 - **Sessions:** a *game session* is a play session (§7). In names such as `ThisSession` and `session_start`, "session" means a game session. "The two sessions" are the Claude Code sessions that build the games: the Covered Lot session and the Sealed Vials session.
 - **Sources:** `GAME_DESIGN.md` (Rule of Rows), the report (`Puzzle-Type-Octalysis.md`) and the other source documents are in `CoveredLot/docs/sources` (Q12, Q38).
 
@@ -46,7 +46,7 @@ covered-lot/                           (Covered Lot's game repo, with its own Un
   Assets/SealedVials/  SealedVials.Client.asmdef    -> Shared.Client, PuzzleCore, PuzzleCore.Sort
 ```
 
-- **Layering:** `Sort` and `Jam` depend only on `PuzzleCore` and never on each other (nor would a later hybrid module). `Bot` references Core and Jam (P5); Sort is added when Sort's bots are built. `Validation` references Core and Jam (P6); Sort is added when the Sort module is built. `Gen` (net10.0, never shipped) references Core and Jam (P4), and the CLI references Gen. `PuzzleMeta` depends on nothing in the engine, holds no rules and is never referenced by Core, Sort, Jam, Bot or Validation. `PuzzleClient` references PuzzleCore (P8). Nothing under `src/` (except the Cloud Code adapter) references UnityEngine or UGS. Enforce this with the `UnityBoundApiPolicy` and the architecture guard tests.
+- **Layering:** `Sort` and `Jam` depend only on `PuzzleCore` and never on each other (nor would a later hybrid module). `Bot` references Core and Jam (P5); Sort is added when Sort's bots are built. `Validation` references Core and Jam (P6); Sort is added when the Sort module is built. `Gen` (net10.0, never shipped) references Core and Jam (P4) and Bot (P5, sim's driver), and the CLI references Gen, through which it also reaches Bot. Only the root namespace `PuzzleCore.Bot` is shared: the bot contracts, their fixed names and the run loop. Each game's bots live in its own namespace (Covered Lot: `PuzzleCore.Bot.Jam`) and stay that game's own, and a guard keeps game types out of the shared namespace (Q75). `PuzzleMeta` depends on nothing in the engine, holds no rules and is never referenced by Core, Sort, Jam, Bot or Validation. `PuzzleClient` references PuzzleCore (P8). Nothing under `src/` (except the Cloud Code adapter) references UnityEngine or UGS. Enforce this with the `UnityBoundApiPolicy` and the architecture guard tests.
 - **Shared client package:** logic and plain building blocks only: the offer-screen logic, the analytics adapter, the game-session and day counters, input and the UI kit. Each game styles its own screens. The package has its own tests, which both Unity projects run. The first session to reach its Unity work creates it in the engine repo and names its folder; the other extends it additively (Covered Lot: P11).
 - **No extra runtime DLLs:** Core uses its own `ReadOnlyArray<T>` instead of `ImmutableArray<T>`, so `sync-engine.sh` does not have to stage System.Collections.Immutable for Unity.
 - **Portability:** the Cloud Code adapter is the only piece that depends on UGS. To move the server later, write a new adapter (for example an ASP.NET endpoint) around the same `IReplayValidator`.
@@ -235,23 +235,33 @@ public interface IClueModel   // implemented by SortClues (tags + shelf ledger) 
 }
 // UniquenessCheck.Run(IClueModel model, NodeBudget budget) stops at the second solution.
 
-// P5 (not in code yet): src/PuzzleCore.Bot.
-public enum BotProfileId { Novice, Average, Expert, Greedy, Planner1, Planner3, Strong }
-// Each game uses its own subset. Covered Lot (Q40): Greedy (prefers a free vehicle whose colour already waits in the
-// bays; it reads every cover), Planner1 (1 ply, ceiling D1), Planner3 (3 plies, ceiling D2; the reference bot) and
-// Expert (the solver). Sealed Vials: Novice, Average, Strong and Expert in its brief; its session settles them.
-public interface IBotProfile { BotProfileId Id { get; } BotSearch Search { get; } PerMille Mistakes { get; } }
-public abstract record BotSearch { private BotSearch() { }      // draws from RandomPurpose.Bot
+// src/PuzzleCore.Bot (P5). Only this root namespace is shared (Q75); each game's bots live in their own namespace.
+public enum BotProfileId { Greedy, Planner1, Planner3, Expert }          // names FIXED FOREVER (BotNames.Of);
+                                                                        // Sealed Vials appends its own
+public enum BotEndReason { Won, NoLegalMove, SlotsFull, Cycle, StepCap }  // names FIXED FOREVER (BotNames.Of)
+public sealed record BotProfile(BotProfileId Id, BotSearch Search, PerMille Mistakes) { public string Name { get; } }
+                                                                        // Name seeds the run's Bot stream
+public abstract record BotSearch { private BotSearch() { }
     public sealed record Limited(MoveCount LookaheadPlies, DeductionRung Ceiling) : BotSearch;  // sees what players see
-    public sealed record FullSolver : BotSearch; }              // Expert only: full information, within its NodeBudget
-// Covered Lot's Greedy fits neither case yet: it reads every cover (Q40) and looks no move ahead. P5 adds its shape.
-public enum BotEndReason { Won, NoLegalMove, SlotsFull, Cycle, StepCap }
-// Every bot run terminates: on Failed, on a repeated ExactKey within the run (Cycle), or after Par × 3 moves
-// (StepCap; the factor is an estimate). Covered Lot runs end in Won or SlotsFull.
-// How Covered Lot's bots play (TC12; Sealed Vials settles its own in its session, Q39): it deduces up to its Ceiling and guesses the rest consistently with the ledger, the tags and
-// the cells it knows; after each reveal it deduces again. A mistake is a random other legal move, at the profile's
-// Mistakes rate (Covered Lot starts Planner1 at 150‰ and Planner3 at 50‰). Every draw comes from the run's Bot stream.
-// Bots play through the shared Attempt, so the near miss keeps one definition, and they take no rescues.
+    public sealed record FullSolver : BotSearch;   // full information: a solver's line (Covered Lot: the par path, Q74)
+    public sealed record Habit : BotSearch; }      // full information, no lookahead: a game's habit (Covered Lot: Greedy)
+public interface IBotPolicy<TState, TMove> {       // one game's way of choosing; it reads only what its profile may see
+    void Observe(ReadOnlyArray<PuzzleEvent> events);
+    TMove Intend(TState state, IReadOnlyList<TMove> legal, Pcg32 random); }
+// BotRunner.Run(rules, start, profile, policy, random, moveCap) plays one run through the shared Attempt in Campaign mode,
+// moves only (no spare, rewind, Insight or concession), and gives BotRun(EndReason, Attempt, Steps). A run ends on Won or
+// Failed, on a repeated ExactKey (Cycle) or at the move cap (StepCap; Par × 3 by the shared estimate), both checked by
+// PuzzleCore.Play.RunGuard. A mistake: on a move with two or more legal moves and a rate above 0, the runner draws a
+// number below 1,000 after the policy has chosen; under the rate it plays a uniformly drawn other legal move, drawing only
+// when two or more remain. Draw order on a run's Bot stream (TC23): the policy's draws first (Covered Lot: the start
+// guess, a redraw after a lift that breaks it, the tie among the best first moves), then the mistake roll, then the
+// mistaken move, each drawn only with two or more choices. BotRun.NearMissWith(solver, budget) gives a failed run's near
+// miss by the shared definition. BotStreams.For(pack, slot, profile, run) is the run's stream.
+// Covered Lot (Q71-Q79): Greedy (Habit, 0‰), Planner1 (Limited 1, D1, 150‰), Planner3 (Limited 3, D2, 50‰; the
+// reference) and Expert (FullSolver, 0‰). The Planners read the covers up to their ceiling (LotClues.Read; a cover seen
+// lifting counts as open, Q72). They guess the rest uniformly over the arrangements that keep each cover's set and the
+// ledger's counts, keep the guess while it fits, and redraw every hidden cover when a lift breaks it (Q71). They look ahead
+// on their own lot model (Q79).
 // Bot results only describe levels until the difficulty pass (Covered Lot: P10); from then on, bot gates may reject.
 
 public interface IReplayValidator { ReplayVerdict Validate(string recordJson); }   // in code; implemented in P6
@@ -280,7 +290,7 @@ public enum InvalidReason { IllegalMove, SpareOutsideFail, SecondSpare, RewindOu
   | `PeakPar` | Optional, in capacity units. Jam: `Some(lowest peak bay use over winning orders)`; Sort: `None`. `Par` always means path length |
   | `DeductionRung` | The level's hardest deduction step, on the deduction ladder below. A needed what-if case split = `NeedsGuess`, rejected |
 
-  Jam-only grader features (`GreedyWinPerMille`, branching, buried third, late-fail share) stay outside `PlanGrade`, in the CSV. Branching and buried third go in `PuzzleCore.Gen`'s grading report, `{packId}.grades.csv` (Covered Lot's P4; defined in its brief, Q62, Q63); `GreedyWinPerMille` and the late-fail share come with the bots, in P5's `sim` CSV. `LevelKind` and `DeductionRung` names, like the mode and game names, come only from `ContractNames`.
+  Jam-only grader features (`GreedyWinPerMille`, branching, buried third, late-fail share) stay outside `PlanGrade`, in the CSV. Branching and buried third go in `PuzzleCore.Gen`'s grading report, `{packId}.grades.csv` (Covered Lot's P4; defined in its brief, Q62, Q63); `GreedyWinPerMille` and the late-fail share come with the bots, from P5's sim reports: GreedyWinPerMille is Greedy's Won per mille in `{packId}.sim.csv` (Q80), and the late-fail share is counted from `{packId}.sim-fails.csv`, Planner3's fails with cleared_permille ≥ 700 over its fails (Q81). `LevelKind` and `DeductionRung` names, like the mode and game names, come only from `ContractNames`.
 - **The deduction ladder (one text for both games; Q5, Q16, Q41, TC10).** Each brief gives examples in its own terms; the rungs are defined only here.
   - **D1:** one tag, with the ledger, fixes a hidden cell. Ledger completion is D1 too: once a colour's ledger count is used up by cells already fixed, that colour comes off every other hidden cell (Q41).
   - **D2:** two or more tags about one hidden cell are needed together (Q60).
@@ -353,7 +363,7 @@ public enum InvalidReason { IllegalMove, SpareOutsideFail, SecondSpare, RewindOu
 | Fail cause | Every fail gets a cause, and no other ending does. An overrun gives `Unknown`. `losing_move_back` is present for every cause except `Unknown` (P2) |
 | Validator modes | Outside Campaign, `TakeSpare`, `Rewind` or `UseInsight` → `BoosterInCompetitiveMode`. In Campaign: `TakeSpare` / `Rewind` while not `Failed` → `SpareOutsideFail` / `RewindOutsideFail`; n outside 1 to the attempt's `RewindLimit` → `RewindOutOfRange`; a second `UseInsight` in one attempt → `InsightLimit`; any action after `Won` or `Concede` → `ActionAfterEnd`. From P6, a Covered Lot `UseInsight` outside play, or on a cell that is not a covered vehicle still in the lot and unseen → `InsightUnavailable`, and the Insight is not spent |
 | Uniqueness | Each shipped clue level passes the clue check (Q6, Q21): `Unique`, with the answer equal to the true colours of the hidden cells and every tag needed, and `Graded` |
-| Bot bands | Each profile's win and near-miss rates, per `BotEndReason`, on the calibration pack stay within the bands recorded at calibration with the user's approval. Re-recording them also needs it. Every run terminates |
+| Bot bands | One test plays the calibration pack with every profile (Q82). In order: the pack pin, the SHA-256 of one line per slot, the level's fingerprint or REJECTED and the reason (TC25); the invariants: every run ends, and Covered Lot's every run ends Won or SlotsFull, Expert wins every run, and no near miss is Unknown; an exact digest of every run; then the bands recorded at calibration with the user's approval (Covered Lot's nine: Won and the near-miss Yes share for Greedy, Planner1 and Planner3, the same two for Planner3 on covered levels, and Planner3's late-fail share). A moved pack pin stops everything until the user is asked. A moved digest with every band held is re-pinned 'bands unchanged', and a tripped band is re-recorded; both need the user's approval, and neither is ever settled by changing levels before the difficulty pass |
 | Money | `RealMoney.For(150 gold)` with $1.99 = 600 as the smallest pack gives 50 USD cents. JPY (0 minor units) rounds up to a whole yen. No gold pack gives `GoldNotSold` |
 | Interstitials | A table test covers every rule of `Interstitials.After` (§7): `Skip` after every level that is not won, after a `DailyProof` or `Competitive` result, during onboarding, with `AdsRemoved`, at each K8 cap, within the first 72 hours, within 7 days of a purchase and after the day's rewarded-ad limit; `Show` only after a won level that breaks none of them |
 | Guards | IL/determinism guards, layering guards, a consumer compile test with Block.Core and PuzzleCore together |
@@ -366,7 +376,7 @@ Both games log the same events from the greybox onward, with `game` = `sort` or 
 |---|---|
 | `level_start` | game, mode, level_id, seed, attempt_index (1-based, per level), set (`clue` = sealed/covered, or `plain`), kind (`think`/`plan`), plan_grade, deduction_grade (absent on plain) |
 | `level_end` | result (win/fail/abandoned), ended_by (`won`/`no_legal_move`/`slots_full`/`retry`/`concede`/`quit`; quit = left the level or the app), moves, time_ms, par_stars, spare_used, gold_earned |
-| `fail_detail` | near_miss (`yes`/`no`/`spare_unavailable`/`unknown`, by the single definition), moves_from_win, rewind_reach (`winnable`/`not_winnable`/`unknown`), fail_kind (`no_legal_move`/`slots_full`), fail_cause (`capacity`/`deduction`/`unknown`), losing_move_back (1 = the last move; absent when fail_cause is `unknown`), cleared_permille (Sort: share of layers in completed vials; Jam: share of vehicles exited). If the bench puts the fail cause offline, `validate` adds fail_cause and losing_move_back from the records, and the phone's event may lack them |
+| `fail_detail` | near_miss (`yes`/`no`/`spare_unavailable`/`unknown`, by the single definition), moves_from_win, rewind_reach (`winnable`/`not_winnable`/`unknown`), fail_kind (`no_legal_move`/`slots_full`), fail_cause (`capacity`/`deduction`/`unknown`), losing_move_back (1 = the last move; absent when fail_cause is `unknown`), cleared_permille (Sort: share of layers in completed vials; Jam: share of vehicles exited; rounded down). If the bench puts the fail cause offline, `validate` adds fail_cause and losing_move_back from the records, and the phone's event may lack them |
 | `stall` | idle > 20 s with legal moves left |
 | `offer_shown` / `offer_result` | offer_type (`spare_vial`/`spare_slot`, `rewind`, `ad_spare`/`ad_rewind`), rewind_moves (1-5, the length chosen; absent otherwise), price, real_money_label (currency + minor units, or `gold_not_sold`), gold_balance, offers_shown_this_session, accepted |
 | `self_blame` | answer to the fail survey: `my_mistake` / `unfair` / `didnt_know`, plus survey_rate |
@@ -394,7 +404,7 @@ Both games log the same events from the greybox onward, with `game` = `sort` or 
 | Rewind / reveals | exact `Rewind(n)` up to the fence (`AtReveal`), the attempt's `SeenSet` | seen layers as automatic pencil marks (*proposal*) | seen covers drawn as lifted |
 | Clues | `IClueModel`, `Uniqueness`, the D1-D3 ladder, the clue check | tags + shelf ledger | tags on covered pieces + ledger (original rule set) |
 | Generator | Pcg32, purposes, try schedule, the JSON pack container | reverse-pour scramble; `pc-sort` text | reverse-exit scramble, `LotLoader`; `pc-lot` text |
-| Solver/grader/bots | `SolveResult`, BFS/IDA*, `LevelGrade`, `IBotProfile`, bot termination | heuristic: Σ (vials holding a colour − 1) | feasibility DFS; "blocked exits + slot pressure" bound only if `bench` needs it |
+| Solver/grader/bots | `SolveResult`, BFS/IDA*, `LevelGrade`, `BotProfile`, `IBotPolicy`, `BotRunner` and bot termination (`RunGuard`) | heuristic: Σ (vials holding a colour − 1) | feasibility DFS; "blocked exits + slot pressure" bound only if `bench` needs it |
 | Fail offer / records / validator / analytics / money | all shared | labels only | labels only |
 | Presentation | the shared client package: offer-screen logic, analytics adapter, UI kit; each game styles its own screens | pour VFX, ledger UI | vehicle motion, slot row |
 
@@ -557,7 +567,7 @@ Covered Lot and Sealed Vials are built in parallel, each by its own Claude Code 
   2. Fast-forward `master` with `git fetch . <branch>:master`. If git refuses, `master` has moved: take it in again and repeat.
   3. Push `master` to GitHub.
 - **Checks before a merge:** `dotnet test` under tr-TR and under sv-SE, no build warnings, and `dotnet build clients/Playtest`. Before an engine phase is merged, a read-only review checks the change, and hand-made mutants of the new code each make the tests fail (Covered Lot plan, Appendix C new item 2).
-- **Shared parts:** PuzzleCore; the build files and the test setup; the golden pins; this file; the shared client package; the Unity editor version.
+- **Shared parts:** PuzzleCore; the root namespace of `PuzzleCore.Bot` (Q75); the build files and the test setup; the golden pins, the calibration pins and the bot bands; this file; the shared client package; the Unity editor version.
 - **Contracts (Q53):** every change to a shared part is small and additive, PuzzleCore included, and it is merged as soon as its checks pass. The exceptions:
   - P3's removal of `ForUnknownCount` (Q5), the one exception approved with the plan. Done in Covered Lot's P3: with the user's approval it was merged without waiting for the note to the Sealed Vials session, since nothing on that session's branch used it. The note went to the user to pass on;
   - re-pins, and edits to this file, that the user approves.
@@ -579,7 +589,7 @@ Covered Lot and Sealed Vials are built in parallel, each by its own Claude Code 
 | `FailCause`, next to `FailAnalysis`, and `losing_move_back` in `fail_detail` | Covered Lot session | P2 (delivered) | `FailAnalysis.CauseOf`, `FailCause` and `IHiddenMoveCheck` are in PuzzleCore. Each game supplies its own position solver and `IHiddenMoveCheck` (TC1); Sort's follows its label in §2 once its session settles it |
 | The deduction ladder in code: `LotClues` switched; `ForUnknownCount` and the third definition removed | Covered Lot session | P3 (delivered) | `LotClues` grades on the §2 ladder, steps included (Q57–Q61), and the covered sample is re-pinned. `DeductionRung` points to §2 and `DeductionRungs.ForUnknownCount` is gone. A Sort grader follows §2's text, steps included |
 | Grades: `PlanGrade`, `LevelGrade`, `LevelKind`, the presentation file, level ids `{packId}-{slot:0000}` | Covered Lot session | P4 (delivered) | `PlanGrade`, `LevelGrade` and `LevelKind` are in `PuzzleCore.Search`, with fixed names in `ContractNames`; `LevelId.For` builds slot ids; `PuzzleCore.Packs` writes and reads the presentation file. A Sort level is a Think level when it has sealed vials, and its grade has no `PeakPar` |
-| `PuzzleCore.Bot`, `IBotProfile` and `sim` | Covered Lot session | P5 | No bot code exists. Sort's profiles and bots are the Sealed Vials session's, added to the project additively |
+| `PuzzleCore.Bot`, `BotRunner` and `sim` | Covered Lot session | P5 (delivered) | The root namespace holds `BotProfile`, `BotSearch` (`Limited`, `FullSolver`, `Habit`), `IBotPolicy`, `BotRunner`, `BotRun`, `BotStep`, `BotStreams` and `BotNames`, and `RunGuard` is in `PuzzleCore.Play`. Sort's profiles and bots are the Sealed Vials session's: they go in their own namespace, with their profile names appended to `BotProfileId`. `sim` and its reports are Covered Lot's (`PuzzleCore.Gen`) |
 | `PuzzleCore.Validation` (`IReplayValidator`), `InsightUnavailable`, the hidden-cell interface and `validate` | Covered Lot session | P6 | The interface is optional, so Sort's rules keep compiling without it (TC6). Whether the Insight refusals bind Sealed Vials is decided in its grilling |
 | The JSON pack container, `generatorVersion`, the pack writer in `PuzzleCore.Gen` and the golden pack pin | Covered Lot session | P7 | Jam levels come from `LotPackBuilder` and `pc-lot` files. Sort uses the container once it is on `master` (Q29) |
 | `PuzzleMeta` and the client-rules project `src/PuzzleClient` (`Interstitials.After`) | Covered Lot session | P8 | The §7 sketches are the target; prices are inputs (Q43) |
