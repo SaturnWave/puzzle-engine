@@ -1,8 +1,33 @@
+using System;
 using System.Collections.Generic;
+using PuzzleCore.Play;
 using PuzzleCore.Search;
 
 namespace PuzzleCore.Jam
 {
+    /// <summary>A hidden cover and the colours a reading leaves it, ascending: one colour when the reading fixed it.</summary>
+    public sealed record CoverColours(PieceId Cover, ReadOnlyArray<ColourId> Colours);
+
+    /// <summary>
+    /// What a bot reads about the covers still hidden in play (<see cref="LotClues.Read"/>; Q71, Q72): each hidden cover,
+    /// ascending, with the colours it may have, and the ledger now (how many hidden covers have each colour).
+    /// </summary>
+    public sealed class CoverReading
+    {
+        private readonly int[] _ledger;
+
+        internal CoverReading(ReadOnlyArray<CoverColours> covers, int[] ledger)
+        {
+            Covers = covers;
+            _ledger = ledger;
+        }
+
+        public ReadOnlyArray<CoverColours> Covers { get; }
+
+        /// <summary>How many of the hidden covers have this colour.</summary>
+        public int LedgerCount(ColourId colour) => _ledger[colour.Value];
+    }
+
     /// <summary>
     /// The clue model of a covered lot at the level start (CoveredLot.md, "Clue checker specifics").
     /// Hidden cells are the covered vehicles (HiddenCell = PieceId). Only public information enters:
@@ -28,6 +53,10 @@ namespace PuzzleCore.Jam
     /// Sets of colours are bit masks over the colour ids 1-15 (bit n is colour n): the grader's inner loops
     /// intersect them on every step and every enumerated assignment.
     /// </para>
+    /// <para>
+    /// <see cref="Read"/> is the bots' reading in play (P5): the same steps up to a ceiling, with the covers already seen
+    /// counted as open vehicles. <see cref="Grade"/> and the public model always read the level start.
+    /// </para>
     /// </summary>
     public sealed class LotClues : IClueModel
     {
@@ -50,6 +79,15 @@ namespace PuzzleCore.Jam
         private readonly List<Rule> _wideRules = new List<Rule>();
 
         public LotClues(LotLevel level)
+            : this(level, default)
+        {
+        }
+
+        /// <summary>
+        /// The model with the covered vehicles in <paramref name="seen"/> counted as open: their colours were seen when
+        /// their covers lifted (Q20, Q72). The ledger counts the covers still hidden. With nothing seen, this is the start.
+        /// </summary>
+        private LotClues(LotLevel level, SeenSet seen)
         {
             var hidden = new List<HiddenCell>();
             var positionOf = new int[level.VehicleCount];
@@ -57,7 +95,7 @@ namespace PuzzleCore.Jam
             {
                 positionOf[piece] = -1;
                 Vehicle vehicle = level.Vehicles[piece];
-                if (vehicle.StartsCovered)
+                if (vehicle.StartsCovered && !seen.Contains(new HiddenCell((byte)piece)))
                 {
                     positionOf[piece] = hidden.Count;
                     hidden.Add(new HiddenCell((byte)piece));
@@ -76,7 +114,11 @@ namespace PuzzleCore.Jam
 
             foreach (LotClue clue in level.Clues)
             {
-                Rule rule = RuleFor(level, clue, positionOf);
+                if (!RuleFor(level, clue, positionOf).TryGet(out Rule? rule))
+                {
+                    continue;
+                }
+
                 _rules.Add(rule);
                 if (rule.Positions.Length == 1)
                 {
@@ -161,6 +203,83 @@ namespace PuzzleCore.Jam
                 hardest = DeductionRungs.Max(hardest, fix.Rung);
                 steps++;
             }
+        }
+
+        /// <summary>
+        /// What a bot reads about the covers still hidden in play (Q71, Q72, Q78). The covered vehicles in
+        /// <paramref name="seen"/> count as open, because their colours were seen when they left; the ledger counts the
+        /// covers still hidden; every tag is read, those of vehicles that have left included. The ladder's steps up to
+        /// <paramref name="ceiling"/> (D1, or D1 and D2) are taken easiest first, as <see cref="Grade"/> takes them, until
+        /// none applies. A cover a step fixed keeps its colour. Any other keeps the colours the ledger has left at D1, and
+        /// those narrowed by every tag about that cover alone at D2; rules over several covers are never read. Throws
+        /// InvalidOperationException when the tags contradict what was seen, which a certified level never does.
+        /// </summary>
+        public static CoverReading Read(LotLevel level, SeenSet seen, DeductionRung ceiling)
+        {
+            if (ceiling is not (DeductionRung.D1 or DeductionRung.D2))
+            {
+                throw new ArgumentOutOfRangeException(nameof(ceiling), ceiling, "A bot reads covers at D1 or D2.");
+            }
+
+            var clues = new LotClues(level, seen);
+            var fixedColours = new Option<ColourId>[clues.HiddenCells.Count];
+            while (true)
+            {
+                ushort coloursLeft = clues.ColoursLeft(fixedColours);
+                List<OwnTag> ownTags = clues.OwnTagsNow(fixedColours);
+                ushort[] domains = DomainsFor(fixedColours, coloursLeft, ownTags);
+                if (clues.IsContradicted(domains))
+                {
+                    throw new InvalidOperationException("The tags contradict the colours seen.");
+                }
+
+                if (AllFixed(fixedColours) || !StepUpTo(ceiling, fixedColours, coloursLeft, ownTags, domains).TryGet(out Fix fix))
+                {
+                    return clues.ReadingOf(fixedColours, ceiling == DeductionRung.D2 ? domains : null, coloursLeft);
+                }
+
+                fixedColours[fix.Position] = Option.Some(fix.Colour);
+            }
+        }
+
+        /// <summary>The easiest step at or below the ceiling (D1 before D2), or none.</summary>
+        private static Option<Fix> StepUpTo(DeductionRung ceiling, Option<ColourId>[] fixedColours, ushort coloursLeft, List<OwnTag> ownTags, ushort[] domains)
+        {
+            Option<Fix> byOneTag = D1Step(fixedColours, coloursLeft, ownTags);
+            return byOneTag.HasValue || ceiling == DeductionRung.D1 ? byOneTag : D2Step(fixedColours, domains);
+        }
+
+        /// <summary>
+        /// Each hidden cover's colours: a fixed cover its colour; any other its domain when the reader reads the tags about
+        /// it alone (D2), or else the colours the ledger has left (D1).
+        /// </summary>
+        private CoverReading ReadingOf(Option<ColourId>[] fixedColours, ushort[]? ownTagDomains, ushort coloursLeft)
+        {
+            var covers = new List<CoverColours>();
+            for (int position = 0; position < fixedColours.Length; position++)
+            {
+                ushort colours = fixedColours[position].TryGet(out ColourId colour) ? Bit(colour.Value)
+                    : ownTagDomains is null ? coloursLeft
+                    : ownTagDomains[position];
+                covers.Add(new CoverColours(new PieceId(HiddenCells[position].Value), ColoursIn(colours)));
+            }
+
+            return new CoverReading(ReadOnlyArray.CopyOf(covers), (int[])_ledger.Clone());
+        }
+
+        /// <summary>The colours in a set, ascending.</summary>
+        private static ReadOnlyArray<ColourId> ColoursIn(ushort colours)
+        {
+            var list = new List<ColourId>();
+            for (byte colour = ColourId.MinValue; colour <= ColourId.MaxValue; colour++)
+            {
+                if ((colours & Bit(colour)) != 0)
+                {
+                    list.Add(new ColourId(colour));
+                }
+            }
+
+            return ReadOnlyArray.CopyOf(list);
         }
 
         /// <summary>The ledger colours some cover still has to take: a colour the fixed covers used up is off (ledger completion).</summary>
@@ -517,43 +636,62 @@ namespace PuzzleCore.Jam
             return colour;
         }
 
-        private static Rule RuleFor(LotLevel level, LotClue clue, int[] positionOf) => clue switch
+        /// <summary>
+        /// The rule a tag puts on the hidden covers. A tag sits on a covered vehicle; once that vehicle's colour is seen, a
+        /// Not about it says nothing more, so it has none. A Touch always has one: it speaks of the neighbours.
+        /// </summary>
+        private static Option<Rule> RuleFor(LotLevel level, LotClue clue, int[] positionOf) => clue switch
         {
-            LotClue.Not not => new NotRule(positionOf[not.On.Value], not.Colour),
+            LotClue.Not not => positionOf[not.On.Value] >= 0
+                ? Option.Some<Rule>(new NotRule(positionOf[not.On.Value], not.Colour))
+                : Option.None<Rule>(),
             LotClue.Ahead ahead => AheadRuleFor(level, ahead, positionOf),
-            LotClue.Touch touch => TouchRuleFor(level, touch, positionOf),
-            _ => throw new System.ArgumentOutOfRangeException(nameof(clue), "Unknown clue family."),
+            LotClue.Touch touch => Option.Some(TouchRuleFor(level, touch, positionOf)),
+            _ => throw new ArgumentOutOfRangeException(nameof(clue), "Unknown clue family."),
         };
 
-        private static Rule AheadRuleFor(LotLevel level, LotClue.Ahead ahead, int[] positionOf)
+        /// <summary>
+        /// Same or differs between the tag's vehicle and its start reference, each either hidden or open (open: never
+        /// covered, or seen). Both open says nothing more. When only the reference is hidden (its tag's vehicle seen through
+        /// Insight), the relation, being symmetric, becomes a tag about the reference.
+        /// </summary>
+        private static Option<Rule> AheadRuleFor(LotLevel level, LotClue.Ahead ahead, int[] positionOf)
         {
             // The loader guarantees a blocker at the start for every Ahead tag.
             level.FirstOnPathAtStart(ahead.On).TryGet(out PieceId reference);
-            Vehicle referenceVehicle = level.VehicleOf(reference);
+            int holder = positionOf[ahead.On.Value];
+            int referenceAt = positionOf[reference.Value];
             bool same = ahead.Relation == AheadRelation.Same;
-            return referenceVehicle.StartsCovered
-                ? new AheadRule(positionOf[ahead.On.Value], positionOf[reference.Value], 0, same)
-                : new AheadRule(positionOf[ahead.On.Value], -1, referenceVehicle.Colour.Value, same);
+            if (holder >= 0)
+            {
+                return Option.Some<Rule>(referenceAt >= 0
+                    ? new AheadRule(holder, referenceAt, 0, same)
+                    : new AheadRule(holder, -1, level.VehicleOf(reference).Colour.Value, same));
+            }
+
+            return referenceAt >= 0
+                ? Option.Some<Rule>(new AheadRule(referenceAt, -1, level.VehicleOf(ahead.On).Colour.Value, same))
+                : Option.None<Rule>();
         }
 
+        /// <summary>The count over the hidden neighbours; open neighbours (never covered, or seen) of the colour are counted out.</summary>
         private static Rule TouchRuleFor(LotLevel level, LotClue.Touch touch, int[] positionOf)
         {
             int knownMatches = 0;
-            var coveredNeighbours = new List<int>();
+            var hiddenNeighbours = new List<int>();
             foreach (PieceId neighbour in Neighbours(level, touch.On))
             {
-                Vehicle vehicle = level.VehicleOf(neighbour);
-                if (vehicle.StartsCovered)
+                if (positionOf[neighbour.Value] >= 0)
                 {
-                    coveredNeighbours.Add(positionOf[neighbour.Value]);
+                    hiddenNeighbours.Add(positionOf[neighbour.Value]);
                 }
-                else if (vehicle.Colour == touch.Colour)
+                else if (level.VehicleOf(neighbour).Colour == touch.Colour)
                 {
                     knownMatches++;
                 }
             }
 
-            return new TouchRule(coveredNeighbours.ToArray(), touch.Colour.Value, touch.Count - knownMatches);
+            return new TouchRule(hiddenNeighbours.ToArray(), touch.Colour.Value, touch.Count - knownMatches);
         }
 
         /// <summary>The vehicles sharing an edge with the footprint at the start, ascending PieceId.</summary>
