@@ -139,7 +139,7 @@ namespace PuzzleCore.Gen
             InParallel(runs.Length, options, index =>
             {
                 int slot = built[index / profiles.Count];
-                runs[index] = RunProfile(pack, slots[slot], ((BuildResult.Built)builds[slot]).Level, profiles[index % profiles.Count], withFailCauses);
+                runs[index] = Play(pack, slots[slot], ((BuildResult.Built)builds[slot]).Level, profiles[index % profiles.Count], withFailCauses);
             });
 
             var simulated = new List<SimSlot>();
@@ -165,9 +165,13 @@ namespace PuzzleCore.Gen
 
         /// <summary>GreedyWinPerMille of one built level (Q80): Greedy's Won per mille over its 200 runs, as sim plays them.</summary>
         public static PerMille GreedyWinPerMille(PackId pack, LevelIndex slot, BuiltLevel built) =>
-            RunProfile(pack, slot, built, LotBots.Greedy, withFailCauses: false).WonPerMille;
+            Play(pack, slot, built, LotBots.Greedy, withFailCauses: false).WonPerMille;
 
-        private static SimProfileRuns RunProfile(PackId pack, LevelIndex slot, BuiltLevel built, BotProfile profile, bool withFailCauses)
+        /// <summary>
+        /// One profile's 200 runs on a built level, keyed by the pack and slot it was built for. With
+        /// <paramref name="withFailCauses"/>, Planner3's failed runs also get their fail cause.
+        /// </summary>
+        public static SimProfileRuns Play(PackId pack, LevelIndex slot, BuiltLevel built, BotProfile profile, bool withFailCauses)
         {
             if (profile.Search is BotSearch.FullSolver)
             {

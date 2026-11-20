@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text;
 using PuzzleCore.Bot;
 using PuzzleCore.Bot.Jam;
 using PuzzleCore.Gen;
@@ -15,12 +17,13 @@ using Xunit;
 namespace PuzzleCore.Tests.Gen
 {
     /// <summary>
-    /// sim's driver and reports (Q81, Q84, TC21, TC24) on four calibration slots: a plain level (0), and covered levels
-    /// read at D1 (24), D2 (44) and D3 (64), so the Planners both read every cover and guess.
+    /// sim's driver and reports (Q81, Q84, TC21, TC24) on five calibration slots: a plain level (0), covered levels read
+    /// at D1 (24), D2 (44) and D3 (64), so the Planners both read every cover and guess, and slot 62, which the builder
+    /// rejects.
     /// </summary>
     public sealed class LotSimTests
     {
-        private static readonly LevelIndex[] Sample = { new(0), new(24), new(44), new(64) };
+        private static readonly LevelIndex[] Sample = { new(0), new(24), new(44), new(62), new(64) };
 
         private static readonly Lazy<SimPack> Simulated = new(() => LotSim.Run(CampaignLevels.Pack, Sample, 4, withFailCauses: true));
 
@@ -30,6 +33,8 @@ namespace PuzzleCore.Tests.Gen
             SimPack pack = Simulated.Value;
 
             Assert.Equal(Sample, pack.Slots.Select(slot => slot.Slot));
+            Assert.IsType<SimSlot.Rejected>(pack.Slots[3]);
+            Assert.Equal(new[] { 0, 24, 44, 64 }, pack.Simulated.Select(level => level.Slot.Value));
             foreach (SimSlot.Simulated level in pack.Simulated)
             {
                 Assert.Equal(LotBots.Profiles, level.Profiles.Select(profile => profile.Profile));
@@ -61,16 +66,49 @@ namespace PuzzleCore.Tests.Gen
         [Fact]
         public void A_run_is_the_shared_runner_on_its_own_bot_stream()
         {
-            SimSlot.Simulated level = Simulated.Value.Simulated.Last();
-            SimRun run = Profile(level, BotProfileId.Planner3).Runs[17];
+            SimSlot.Simulated level = Simulated.Value.Simulated.Single(slot => slot.Slot.Value == 44);
+            SimProfileRuns planner1 = Profile(level, BotProfileId.Planner1);
 
-            var replayed = BotRunner.Run(
-                new JamRules(level.Built.Level), LotState.Start(level.Built.Level), LotBots.Planner3, LotBots.PolicyFor(LotBots.Planner3, level.Built),
-                BotStreams.For(CampaignLevels.Pack, level.Slot, LotBots.Planner3, 17), LotBots.MoveCapFor(level.Built.Level));
+            for (int run = 0; run < 30; run++)
+            {
+                SimRun kept = planner1.Runs[run];
+                LotBotPolicy policy = LotBots.PolicyFor(LotBots.Planner1, level.Built);
+                var replayed = BotRunner.Run(
+                    new JamRules(level.Built.Level), LotState.Start(level.Built.Level), LotBots.Planner1, policy,
+                    BotStreams.For(CampaignLevels.Pack, level.Slot, LotBots.Planner1, run), LotBots.MoveCapFor(level.Built.Level));
 
-            Assert.Equal(replayed.Steps.Select(step => step.Move), run.Moves);
-            Assert.Equal(replayed.Steps.Count(step => step.WasMistake), run.Mistakes);
-            Assert.Equal(replayed.EndReason, run.EndReason);
+                Assert.Equal(replayed.Steps.Select(step => step.Move), kept.Moves);
+                Assert.Equal(replayed.EndReason, kept.EndReason);
+                Assert.Equal(replayed.Steps.Count(step => step.WasMistake), kept.Mistakes);
+                Assert.Equal(replayed.Steps[^1].WasMistake, kept.LastMoveWasMistake);
+                Assert.Equal(policy.Guesses, kept.Guesses);
+                Assert.Equal(LotProgress.Cleared(level.Built.Level, replayed.Attempt.Current), kept.Cleared);
+            }
+
+            Assert.Contains(planner1.Runs.Take(30), run => run.Mistakes > 0 && !run.LastMoveWasMistake);
+        }
+
+        [Fact]
+        public void A_fail_is_late_from_700_per_mille_cleared()
+        {
+            SimRun fail = Simulated.Value.Simulated.SelectMany(level => level.Profiles).SelectMany(profile => profile.Runs).First(run => run.Failed);
+
+            Assert.True((fail with { Cleared = new PerMille(700) }).IsLateFail);
+            Assert.False((fail with { Cleared = new PerMille(699) }).IsLateFail);
+            Assert.False((fail with { EndReason = BotEndReason.Won, Cleared = new PerMille(1000) }).IsLateFail);
+        }
+
+        [Fact]
+        public void An_expert_that_loses_on_its_par_path_is_an_engine_fault()
+        {
+            // The free-cars board with a par path that parks three colours and then a fourth car: the bays fill.
+            LotLevel level = Jam.Boards.Load(Jam.Boards.FreeCars(
+                4, Jam.Boards.Blue, Jam.Boards.Red, Jam.Boards.Yellow, Jam.Boards.Blue, Jam.Boards.Red, Jam.Boards.Yellow,
+                Jam.Boards.Blue, Jam.Boards.Red, Jam.Boards.Yellow));
+            var losing = new BuiltLevel(
+                level, default, ReadOnlyArray.CopyOf(new[] { 0, 1, 2, 3 }.Select(piece => new Exit(new PieceId((byte)piece)))), Option.None<Search.DeductionGrade.Graded>());
+
+            Assert.Throws<InvalidOperationException>(() => LotSim.Play(CampaignLevels.Pack, new LevelIndex(0), losing, LotBots.Expert, withFailCauses: false));
         }
 
         [Fact]
@@ -118,7 +156,11 @@ namespace PuzzleCore.Tests.Gen
             Assert.Equal(Text(fails.Count(run => run.IsNearMiss)), slotsFull[7]);
             Assert.Equal(Text(PerMille.Of(fails.Count(run => run.IsNearMiss), fails.Count).Value), slotsFull[11]);
             Assert.Equal(Text(fails.Count(run => run.Mistakes > 0)), slotsFull[13]);
+            Assert.Equal(Text(fails.Count(run => run.LastMoveWasMistake && run.IsNearMiss)), slotsFull[12]);
+            Assert.Equal(Text(fails.Count(run => run.LastMoveWasMistake)), slotsFull[14]);
+            Assert.Equal(Text(fails.Sum(run => run.Guesses.Or(new GuessTally(0, 0)).Right)), slotsFull[15]);
             Assert.Equal(Text(fails.Sum(run => run.Guesses.Or(new GuessTally(0, 0)).Wrong)), slotsFull[16]);
+            Assert.True(fails.Sum(run => run.Guesses.Or(new GuessTally(0, 0)).Wrong) > 0, "The D3 level must show wrong guesses.");
         }
 
         [Fact]
@@ -130,18 +172,27 @@ namespace PuzzleCore.Tests.Gen
 
             Assert.Equal(LotSimCsv.FailsHeader, lines[0]);
             Assert.All(rows, row => Assert.Equal(8, row.Length));
-            Assert.All(rows, row => Assert.InRange(int.Parse(row[4], System.Globalization.CultureInfo.InvariantCulture), 0, 9));
-            Assert.All(rows, row => Assert.True(int.Parse(row[7], System.Globalization.CultureInfo.InvariantCulture) > 0));
+            Assert.All(rows, row => Assert.InRange(Number(row[4]), 0, 9));
+            Assert.All(rows, row => Assert.True(Number(row[7]) > 0));
             Assert.All(rows, row => Assert.Equal(row[2] == "Planner3", row[5].Length > 0));
+            string[] nearMisses = { "Yes", "No", "SpareUnavailable", "Unknown" };
+            string[] causes = { string.Empty, "Capacity", "Deduction", "Unknown" };
             foreach (SimSlot.Simulated level in pack.Simulated)
             {
                 foreach (SimProfileRuns profile in level.Profiles)
                 {
-                    int listed = rows.Where(row => row[0] == level.Id.Value && row[2] == profile.Profile.Name)
-                        .Sum(row => int.Parse(row[7], System.Globalization.CultureInfo.InvariantCulture));
-                    Assert.Equal(profile.Fails, listed);
+                    List<string[]> own = rows.Where(row => row[0] == level.Id.Value && row[2] == profile.Profile.Name).ToList();
+                    var keys = own.Select(row => (Array.IndexOf(nearMisses, row[3]), Number(row[4]), Array.IndexOf(causes, row[5]), row[6].Length == 0 ? -1 : Number(row[6]))).ToList();
+
+                    Assert.Equal(profile.Fails, own.Sum(row => Number(row[7])));
+                    Assert.Equal(profile.LateFails, own.Where(row => Number(row[4]) >= 7).Sum(row => Number(row[7])));
+                    Assert.Equal(profile.NearMisses, own.Where(row => row[3] == "Yes").Sum(row => Number(row[7])));
+                    Assert.Equal(keys.OrderBy(key => key), keys);
+                    Assert.Equal(keys.Count, keys.Distinct().Count());
                 }
             }
+
+            Assert.Contains(rows, row => row[2] == "Planner3" && row[6].Length > 0);
         }
 
         [Fact]
@@ -193,6 +244,47 @@ namespace PuzzleCore.Tests.Gen
             Assert.Throws<ArgumentException>(() => LotSim.Run(longPack, 1, 1, withFailCauses: false));
             Assert.Empty(LotSim.Run(CampaignLevels.Pack, 0, 1, withFailCauses: false).Slots);
         }
+
+        [Fact]
+        public void Sim_writes_its_reports_and_planner3s_first_fail_of_each_level_as_utf8_without_a_mark()
+        {
+            SimPack pack = Simulated.Value;
+            string directory = Path.Combine(Path.GetTempPath(), "puzzle-sim-test-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                LotSimFiles.Write(pack, directory);
+
+                var expected = new List<string> { "campaign-jam.sim-fails.csv", "campaign-jam.sim.csv" };
+                foreach (SimSlot.Simulated level in pack.Simulated)
+                {
+                    if (Profile(level, BotProfileId.Planner3).Runs.FirstOrDefault(run => run.Failed) is SimRun failed)
+                    {
+                        expected.Add(level.Id.Value + ".pc-lot");
+                        expected.Add(level.Id.Value + ".planner3-" + failed.Run.ToString("000", System.Globalization.CultureInfo.InvariantCulture) + ".pc-record.json");
+                        Assert.Equal(
+                            Encoding.UTF8.GetBytes(RecordJson.Write(LotSimFiles.RecordOf(pack.Pack, level, failed), ExitJson.Instance)),
+                            File.ReadAllBytes(Path.Combine(directory, LotSimFiles.RecordFileName(level.Id, failed.Run))));
+                        Assert.Equal(Encoding.UTF8.GetBytes(LotText.Write(level.Built.Level)), File.ReadAllBytes(Path.Combine(directory, level.Id.Value + ".pc-lot")));
+                    }
+                }
+
+                Assert.Equal(
+                    expected.OrderBy(name => name, StringComparer.Ordinal),
+                    Directory.GetFiles(directory).Select(path => Path.GetFileName(path)).OrderBy(name => name, StringComparer.Ordinal));
+                Assert.Equal(Encoding.UTF8.GetBytes(LotSimCsv.Write(pack)), File.ReadAllBytes(Path.Combine(directory, "campaign-jam.sim.csv")));
+                Assert.Equal(Encoding.UTF8.GetBytes(LotSimCsv.WriteFails(pack)), File.ReadAllBytes(Path.Combine(directory, "campaign-jam.sim-fails.csv")));
+                Assert.True(expected.Count > 2, "Planner3 must fail somewhere in the sample.");
+            }
+            finally
+            {
+                if (Directory.Exists(directory))
+                {
+                    Directory.Delete(directory, recursive: true);
+                }
+            }
+        }
+
+        private static int Number(string text) => int.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
 
         private static SimProfileRuns Profile(SimSlot.Simulated level, BotProfileId id) =>
             level.Profiles.Single(profile => profile.Profile.Id == id);
