@@ -49,6 +49,9 @@ namespace PuzzleCore.Tests.Support
     /// </summary>
     internal sealed record MemberUse(TypeShape DeclaringType, string MemberName, IReadOnlyList<TypeShape> Parameters, bool UsesFloatingPoint)
     {
+        /// <summary>Whether the member is a field (read, written or named by a token), which has no parameters; a method otherwise.</summary>
+        public bool IsField { get; init; }
+
         /// <summary>The method's own type arguments (Cell and String of OrderBy&lt;Cell,String&gt;); empty for a non-generic method.</summary>
         public IReadOnlyList<TypeShape> MethodTypeArguments { get; init; } = Array.Empty<TypeShape>();
 
@@ -58,8 +61,9 @@ namespace PuzzleCore.Tests.Support
         /// <summary>The static types of the values passed, one per parameter; null where the walk cannot tell. Empty for a field or token.</summary>
         public IReadOnlyList<TypeShape?> Arguments { get; init; } = Array.Empty<TypeShape?>();
 
+        /// <summary>Type::Member, with the parameter list of a method, for example System.Int32::ToString(System.IFormatProvider).</summary>
         public string Display => DeclaringType.Display + "::" + MemberName
-            + "(" + string.Join(", ", Parameters.Select(parameter => parameter.Display)) + ")";
+            + (IsField ? string.Empty : "(" + string.Join(", ", Parameters.Select(parameter => parameter.Display)) + ")");
 
         /// <summary>The type with the declaring type's (!n) and the method's (!!n) generic parameters replaced by their arguments, where known.</summary>
         public TypeShape Resolve(TypeShape type)
@@ -87,6 +91,13 @@ namespace PuzzleCore.Tests.Support
     {
         public override string ToString() => CallerType + "::" + CallerMethod + " -> " + DeclaringType + "::" + MemberName;
     }
+
+    /// <summary>
+    /// One external type that a type definition names in its declarations: the type definition (nested types with their
+    /// full name, for example "PuzzleCore.Jam.X+Y") and the external type, generic arguments stripped, for example
+    /// System.Collections.Generic.IReadOnlyList`1.
+    /// </summary>
+    internal sealed record DeclaredTypeUse(string DeclaringType, string ExternalType);
 
     /// <summary>
     /// Reads a compiled assembly's metadata and IL without loading it, to prove rules the
@@ -228,6 +239,40 @@ namespace PuzzleCore.Tests.Support
 
             return found.Distinct().ToList();
         }
+
+        /// <summary>
+        /// The external types each type definition names in its declarations: its base type and interfaces, the types of
+        /// its fields and properties, and the parameter, return and local types of its methods, generic arguments
+        /// included, but not its attributes. The policy walk judges what method bodies name, instruction by instruction; a
+        /// refused type that only a declaration names reaches <see cref="ApiPolicyViolations"/> once, unlocated, through
+        /// the type reference table, and this shows which type named it.
+        /// </summary>
+        public IReadOnlyList<DeclaredTypeUse> DeclaredExternalTypes()
+        {
+            var found = new List<DeclaredTypeUse>();
+            foreach (TypeDefinitionHandle typeHandle in _reader.TypeDefinitions)
+            {
+                TypeDefinition type = _reader.GetTypeDefinition(typeHandle);
+                IEnumerable<TypeShape> supertypes = type.GetInterfaceImplementations()
+                    .Select(implementation => ShapeOf(_reader.GetInterfaceImplementation(implementation).Interface))
+                    .Concat(type.BaseType.IsNil ? Array.Empty<TypeShape>() : new[] { ShapeOf(type.BaseType) });
+                IEnumerable<TypeShape> fields = type.GetFields()
+                    .Select(field => _reader.GetFieldDefinition(field).DecodeSignature(_shapes, null));
+                IEnumerable<TypeShape> properties = type.GetProperties()
+                    .SelectMany(property => SignatureTypes(_reader.GetPropertyDefinition(property).DecodeSignature(_shapes, null)));
+                IEnumerable<TypeShape> methods = type.GetMethods()
+                    .SelectMany(method => SignatureTypes(_reader.GetMethodDefinition(method).DecodeSignature(_shapes, null)).Concat(LocalTypes(method)));
+                string typeName = FullName(typeHandle);
+                found.AddRange(supertypes.Concat(fields).Concat(properties).Concat(methods)
+                    .SelectMany(shape => shape.ExternalTypes)
+                    .Distinct(StringComparer.Ordinal)
+                    .Select(external => new DeclaredTypeUse(typeName, external)));
+            }
+
+            return found;
+        }
+
+        private static IEnumerable<TypeShape> SignatureTypes(MethodSignature<TypeShape> signature) => signature.ParameterTypes.Append(signature.ReturnType);
 
         /// <summary>
         /// Catch blocks that swallow everything (catch (Exception), a bare catch, or such a catch
@@ -558,7 +603,10 @@ namespace PuzzleCore.Tests.Support
                 case HandleKind.FieldDefinition:
                     FieldDefinition field = _reader.GetFieldDefinition((FieldDefinitionHandle)operand);
                     return new MemberUse(ShapeOfDefinition(field.GetDeclaringType()), _reader.GetString(field.Name),
-                        Array.Empty<TypeShape>(), field.DecodeSignature(_shapes, null).UsesFloatingPoint);
+                        Array.Empty<TypeShape>(), field.DecodeSignature(_shapes, null).UsesFloatingPoint)
+                    {
+                        IsField = true,
+                    };
                 default:
                     return null;
             }
@@ -572,7 +620,10 @@ namespace PuzzleCore.Tests.Support
             if (member.GetKind() == MemberReferenceKind.Field)
             {
                 TypeShape fieldType = member.DecodeFieldSignature(_shapes, null);
-                return new MemberUse(parent, name, Array.Empty<TypeShape>(), parent.UsesFloatingPoint || fieldType.UsesFloatingPoint);
+                return new MemberUse(parent, name, Array.Empty<TypeShape>(), parent.UsesFloatingPoint || fieldType.UsesFloatingPoint)
+                {
+                    IsField = true,
+                };
             }
 
             MethodSignature<TypeShape> signature = member.DecodeMethodSignature(_shapes, null);

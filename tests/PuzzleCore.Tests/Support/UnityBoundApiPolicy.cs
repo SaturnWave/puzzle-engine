@@ -42,6 +42,15 @@ namespace PuzzleCore.Tests.Support
 
         public string RefusedTypeReason => "is not on the Unity-bound allowlist";
 
+        /// <summary>Every banned member as Type::Member (the type without generic arguments), each once; the self-tests plant a use of each.</summary>
+        public IReadOnlyList<string> BannedMembers => _bans.Select(ban => ban.TypeName + "::" + ban.MemberName).Distinct(StringComparer.Ordinal).ToList();
+
+        /// <summary>The allowed types of which only some members may be used, in ordinal order; the self-tests plant a use of a member each leaves out.</summary>
+        public IReadOnlyList<string> TypesWithMemberLimits => _types.Values.OfType<OnlyMembers>()
+            .Select(rule => rule.TypeName)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToList();
+
         public bool IsTypeAllowed(string typeName) => _types.ContainsKey(typeName);
 
         public IEnumerable<string> MemberViolations(MemberUse use, CallerContext caller)
@@ -246,8 +255,9 @@ namespace PuzzleCore.Tests.Support
                 bans.Add(new MemberBan("System.StringComparer", comparer, _ => true, LinguisticOrder));
             }
 
-            bans.Add(new MemberBan("System.Collections.Comparer", "get_Default", _ => true, LinguisticOrder));
-            bans.Add(new MemberBan("System.Collections.Comparer", "get_DefaultInvariant", _ => true, LinguisticOrder));
+            // Default and DefaultInvariant of System.Collections.Comparer are static fields (ldsfld), not properties.
+            bans.Add(new MemberBan("System.Collections.Comparer", "Default", _ => true, LinguisticOrder));
+            bans.Add(new MemberBan("System.Collections.Comparer", "DefaultInvariant", _ => true, LinguisticOrder));
             bans.Add(new MemberBan("System.Collections.Generic.Comparer`1", "get_Default", use => OrdersText(TypeArgument(use.DeclaringType, 0)), LinguisticOrder));
             foreach (string sorted in new[] { "System.Collections.Generic.SortedDictionary`2", "System.Collections.Generic.SortedSet`1", "System.Collections.Generic.SortedList`2" })
             {
