@@ -23,6 +23,13 @@ namespace PuzzleCore.Tests.Support
         private const string UnorderedEnumeration = "enumeration order is an implementation detail that may differ between .NET and Unity; keep a sorted or explicit order";
         private const string UnstableSort = "unstable sort: equal keys may come out in a different order on Mono/IL2CPP and .NET; use OrderBy";
         private const string LinguisticOrder = "orders text by the device culture or by the platform's collation tables (ICU, NLS and Mono differ); use StringComparer.Ordinal";
+        private const string NullCulture = "depends on the device culture: a null provider or culture stands for it; pass CultureInfo.InvariantCulture";
+
+        /// <summary>Parameter types through which a call takes the culture it formats, parses or compares by.</summary>
+        private static readonly string[] CultureParameterTypes = { "System.IFormatProvider", "System.Globalization.CultureInfo" };
+
+        /// <summary>Parameter types through which a call takes the comparer it orders by.</summary>
+        private static readonly string[] ComparerParameterTypes = { "System.Collections.Generic.IComparer`1" };
 
         private static readonly string[] IntegerTypes =
         {
@@ -68,8 +75,11 @@ namespace PuzzleCore.Tests.Support
         }
 
         /// <summary>
-        /// The member bans alone, without the allowlist: culture-dependent text, the platform newline, randomized hashing,
-        /// unordered enumeration and unstable sorts. The generator content policy applies them too (T30).
+        /// The member bans alone, without the allowlist: the members <see cref="DefaultBans"/> names for culture-dependent
+        /// text and text order, the platform newline, randomized hashing, thread identity, enumeration in hash order and
+        /// unstable sorts; the values that make any call depend on the device culture (<see cref="CultureDependentArguments"/>);
+        /// and the hash-order rules of <see cref="UnorderedSequences"/>. <see cref="MemberBansPolicy"/> applies them to
+        /// code that may use every platform type.
         /// </summary>
         public IEnumerable<string> BannedMemberUses(MemberUse use, CallerContext caller)
         {
@@ -85,11 +95,40 @@ namespace PuzzleCore.Tests.Support
                 }
             }
 
-            if (!caller.IsSynthesizedRecordMember && UnorderedSequences.EnumeratesInHashOrder(use))
+            if (caller.IsSynthesizedRecordMember)
+            {
+                yield break;
+            }
+
+            foreach (string reason in CultureDependentArguments(use))
+            {
+                yield return reason;
+            }
+
+            if (UnorderedSequences.EnumeratesInHashOrder(use))
             {
                 yield return UnorderedEnumeration;
             }
         }
+
+        /// <summary>
+        /// Why the values a call passes make it depend on the device culture, whatever member it calls: null given for a
+        /// provider or a culture stands for the device culture. The bans on the overloads without a provider cannot see
+        /// it, as the overload takes one; nor can they see an optional provider left out, which C# passes as null.
+        /// </summary>
+        private static IEnumerable<string> CultureDependentArguments(MemberUse use)
+        {
+            bool passesNullCulture = PassedValues(use)
+                .Any(passed => CultureParameterTypes.Contains(passed.Parameter.DefinitionName) && passed.Argument is { IsNullReference: true });
+            if (passesNullCulture)
+            {
+                yield return NullCulture;
+            }
+        }
+
+        /// <summary>Each parameter of a call with what the walk knows of the value passed to it; for a field or token use, nothing.</summary>
+        private static IEnumerable<(TypeShape Parameter, TypeShape? Argument)> PassedValues(MemberUse use) =>
+            use.Parameters.Zip(use.Arguments, (parameter, argument) => (parameter, argument));
 
         private static IEnumerable<TypeRule> DefaultTypes()
         {
@@ -329,8 +368,13 @@ namespace PuzzleCore.Tests.Support
         private static bool JoinsOnlyText(MemberUse use) =>
             use.MethodTypeArguments.Count > 0 && use.MethodTypeArguments.All(argument => argument.DefinitionName == "System.String");
 
+        /// <summary>
+        /// Whether the call passes a comparer: a comparer parameter given anything but null, which stands for the default
+        /// comparer. A value the walk does not know counts as a comparer.
+        /// </summary>
         private static bool TakesComparer(MemberUse use) =>
-            use.Parameters.Any(parameter => parameter.DefinitionName == "System.Collections.Generic.IComparer`1");
+            use.Parameters.Select((parameter, index) => (Parameter: parameter, Argument: index < use.Arguments.Count ? use.Arguments[index] : null))
+                .Any(passed => ComparerParameterTypes.Contains(passed.Parameter.DefinitionName) && passed.Argument is not { IsNullReference: true });
 
         private static TypeShape? TypeArgument(TypeShape type, int index) => index < type.TypeArguments.Length ? type.TypeArguments[index] : null;
 

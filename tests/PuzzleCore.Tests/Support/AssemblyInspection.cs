@@ -21,7 +21,8 @@ namespace PuzzleCore.Tests.Support
 
     /// <summary>
     /// A type as it appears in a signature: a readable name, the name of its definition
-    /// (generic arguments stripped), the external types it mentions and two flags.
+    /// (generic arguments stripped), the external types it mentions and two flags. The IL walk
+    /// also gives each value on the stack one: its static type, or <see cref="NullReference"/>.
     /// </summary>
     internal sealed record TypeShape(
         string Display,
@@ -30,6 +31,12 @@ namespace PuzzleCore.Tests.Support
         bool UsesFloatingPoint,
         bool UsesNativeInteger)
     {
+        /// <summary>The null reference that ldnull pushes, a value of no type; a policy refuses it where null stands for the device culture.</summary>
+        public static TypeShape NullReference { get; } = new("null", "null", ImmutableArray<string>.Empty, false, false) { IsNullReference = true };
+
+        /// <summary>Whether this is <see cref="NullReference"/>; false for every type.</summary>
+        public bool IsNullReference { get; private init; }
+
         /// <summary>The type arguments of a generic instantiation (String and Int32 of Dictionary`2&lt;String,Int32&gt;); empty otherwise.</summary>
         public ImmutableArray<TypeShape> TypeArguments { get; init; } = ImmutableArray<TypeShape>.Empty;
 
@@ -861,11 +868,12 @@ namespace PuzzleCore.Tests.Support
         /// takes, and each ldvirtftn with the object it takes. One forward walk tracks the evaluation stack: a value loaded
         /// from an argument, a local or a field, returned by a call, made by newobj or cast keeps its declared type; box
         /// keeps the type of the value it boxes; a callvirt after the constrained. prefix takes a receiver of the prefix's
-        /// type; every other value is unknown (null). Where control merges, a slot keeps its type only when every path that
-        /// reached it so far agrees. After an unconditional jump the walk resumes with the stack a forward branch recorded
-        /// for the target, else with an empty stack (C# leaves the stack empty at statement boundaries such as loop heads).
-        /// A value stored into a local of another type loses its own type, so the checks built on this see a value only
-        /// where it is passed straight on.
+        /// type; ldnull pushes <see cref="TypeShape.NullReference"/>; every other value is unknown (null). Where control
+        /// merges, a slot keeps its type only when every path that reached it so far agrees. After an unconditional jump
+        /// the walk resumes with the stack a forward branch recorded for the target, else with an empty stack (C# leaves
+        /// the stack empty at statement boundaries such as loop heads). A value stored into a local loses what the walk
+        /// knew of it: loaded again, it has the local's declared type. So the checks built on this see a value only where
+        /// it is passed straight on.
         /// </summary>
         private IEnumerable<FlowStep> Flow(MethodDefinitionHandle methodHandle)
         {
@@ -1011,6 +1019,11 @@ namespace PuzzleCore.Tests.Support
             if (opCode == OpCodes.Ldfld || opCode == OpCodes.Ldsfld)
             {
                 return FieldType(instruction.Operand);
+            }
+
+            if (opCode == OpCodes.Ldnull)
+            {
+                return TypeShape.NullReference;
             }
 
             // box keeps the type of the value it boxes (an int stays an int), so a call on the object still shows it.

@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 
 namespace PuzzleCore.Tests.Guards.Samples
 {
@@ -25,6 +27,19 @@ namespace PuzzleCore.Tests.Guards.Samples
         public static string EnumName(CleanColour colour) => colour.ToString();
 
         public static string GenericWithInvariantCulture<T>(T value) => string.Format(CultureInfo.InvariantCulture, "value {0}", value);
+
+        public static int ParseInvariant(string text) => int.Parse(text, CultureInfo.InvariantCulture);
+
+        public static bool TryFormatInvariant(int value, Span<char> destination) => value.TryFormat(destination, out _, default, CultureInfo.InvariantCulture);
+
+        public static string UpperInvariantCulture(string text) => text.ToUpper(CultureInfo.InvariantCulture);
+
+        // Null for a parameter that takes no culture.
+        public static string TextAfterNothing(string text) => string.Concat(null, text);
+
+        public static List<string> OrderByOrdinalComparer(IEnumerable<string> names) => names.OrderBy(name => name, StringComparer.Ordinal).ToList();
+
+        public static SortedSet<string> SortedSetWithOrdinalComparer() => new SortedSet<string>(StringComparer.Ordinal);
     }
 
     /// <summary>An enum of the sample's own: its ToString prints the member's name.</summary>

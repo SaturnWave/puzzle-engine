@@ -24,6 +24,7 @@ namespace PuzzleCore.Tests.Guards
         private const string Samples = "PuzzleCore.Tests.Guards.Samples.";
 
         private const string Culture = "depends on the device culture";
+        private const string NullCulture = "a null provider or culture stands for it";
         private const string TextOrder = "orders text by the device culture";
         private const string RandomizedHash = "hash codes are randomized per process";
         private const string HashOrder = "enumeration order is an implementation detail";
@@ -100,6 +101,16 @@ namespace PuzzleCore.Tests.Guards
             { "PolicyGapSamples::GenericConcatenated", "System.Object::ToString", Culture },
             { "PolicyGapSamples::NumberToStringDelegate", "System.Object::ToString", Culture },
             { "GenericHolderSample`1::Text", "System.Object::ToString", Culture },
+            { "PolicyGapSamples::NullProviderToString", "System.Int32::ToString", NullCulture },
+            { "PolicyGapSamples::NullProviderWithFormat", "System.Int32::ToString", NullCulture },
+            { "PolicyGapSamples::NullProviderParse", "System.Int32::Parse", NullCulture },
+            { "PolicyGapSamples::NullProviderFormat", "System.String::Format", NullCulture },
+            { "PolicyGapSamples::NullProviderAppendFormat", "System.Text.StringBuilder::AppendFormat", NullCulture },
+            { "PolicyGapSamples::DefaultProviderTryFormat", "System.Int32::TryFormat", NullCulture },
+            { "PolicyGapSamples::DefaultProviderSpanParse", "System.Int32::Parse", NullCulture },
+            { "PolicyGapSamples::NullCultureToUpper", "System.String::ToUpper", NullCulture },
+            { "PolicyGapSamples::OrderByNullComparer", "System.Linq.Enumerable::OrderBy", TextOrder },
+            { "PolicyGapSamples::SortedSetNullComparer", "System.Collections.Generic.SortedSet`1::.ctor", TextOrder },
         };
 
         /// <summary>

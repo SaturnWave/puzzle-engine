@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text;
 
 // Every member below breaks a determinism rule on purpose. The analyzers would (rightly) reject some of them in a .NET
-// build, hence the local suppression; Unity runs no analyzers, so the IL scan is what must see them.
-#pragma warning disable CA1305
+// build, hence the local suppressions; Unity runs no analyzers, so the IL scan is what must see them.
+#pragma warning disable CA1304, CA1305, CA1311
 
 namespace PuzzleCore.Tests.Guards.Samples
 {
@@ -36,6 +39,29 @@ namespace PuzzleCore.Tests.Guards.Samples
             Func<string> text = value.ToString;
             return text();
         }
+
+        // A null provider or culture, which stands for the device culture: the overload takes one, so the bans on the
+        // overloads without one let it through. Two of them pass null by the parameter's default value.
+        public static string NullProviderToString(int value) => value.ToString((IFormatProvider?)null);
+
+        public static string NullProviderWithFormat(int value) => value.ToString("D", null);
+
+        public static int NullProviderParse(string text) => int.Parse(text, null);
+
+        public static string NullProviderFormat(int value) => string.Format(null, "{0} pieces", value);
+
+        public static StringBuilder NullProviderAppendFormat(StringBuilder builder, int value) => builder.AppendFormat(null, "{0} pieces", value);
+
+        public static bool DefaultProviderTryFormat(int value, Span<char> destination) => value.TryFormat(destination, out _);
+
+        public static int DefaultProviderSpanParse(ReadOnlySpan<char> text) => int.Parse(text);
+
+        public static string NullCultureToUpper(string text) => text.ToUpper((CultureInfo?)null);
+
+        // A null comparer, which stands for the default one: by the device culture for text.
+        public static List<string> OrderByNullComparer(IEnumerable<string> names) => names.OrderBy(name => name, null).ToList();
+
+        public static SortedSet<string> SortedSetNullComparer() => new SortedSet<string>((IComparer<string>?)null);
     }
 
     /// <summary>A generic type whose own parameter (!0) is the receiver, as in an Option&lt;T&gt;.ToString.</summary>
