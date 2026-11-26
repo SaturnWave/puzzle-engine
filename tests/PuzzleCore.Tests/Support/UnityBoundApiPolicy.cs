@@ -9,12 +9,14 @@ namespace PuzzleCore.Tests.Support
     /// The platform APIs that the Unity-bound engine assemblies may use, so that the same actions give the same results
     /// on every device and on .NET, Mono and IL2CPP alike (docs/shared-design.md, §3). It is an ALLOWLIST: a type that is
     /// not listed is rejected, so a new way to read the clock, draw randomness, depend on the device culture, platform or
-    /// time zone, or do floating-point math cannot slip in unnoticed. Within allowed types, member bans remove the
-    /// culture-, platform- and process-dependent members they name, and rules over every call refuse the values that make
-    /// a call depend on the device culture (a null provider, culture or comparer; a StringComparison other than a constant
-    /// Ordinal or OrdinalIgnoreCase). The remarks list the uses they do not see. Adding a type or lifting a ban is a
-    /// reviewed change with a reason in the comment next to it. Members the compiler synthesizes for records (ToString,
-    /// PrintMembers, Equals, GetHashCode...) are exempt, on the rule that no result is ever built from their output.
+    /// time zone, or do floating-point math cannot slip in unnoticed. Member bans remove the culture-, platform- and
+    /// process-dependent members they name: of allowed types, and of types left out that the member bans alone
+    /// (<see cref="MemberBansPolicy"/>) must still refuse, such as a TextWriter's formatting. Rules over every call refuse
+    /// the values that make a call depend on the device culture (a null provider, culture or comparer; a StringComparison
+    /// other than a constant Ordinal or OrdinalIgnoreCase). The remarks list the uses they do not see. Adding a type or
+    /// lifting a ban is a reviewed change with a reason in the comment next to it. Members the compiler synthesizes for
+    /// records (ToString, PrintMembers, Equals, GetHashCode...) are exempt, on the rule that no result is ever built from
+    /// their output.
     /// </summary>
     /// <remarks>
     /// Known gaps. Each of these passes this policy and <see cref="MemberBansPolicy"/>, and the guard tests plant each one
@@ -32,11 +34,18 @@ namespace PuzzleCore.Tests.Support
     /// bool&gt;.Invoke), whose parameter is a generic placeholder.</description></item>
     /// <item><description>An enum value outside the enum's members: its ToString prints the number, a negative one with
     /// the device culture's minus sign.</description></item>
+    /// <item><description>A tuple or a pair that holds an integer, given to a format with a provider where the walk does
+    /// not see it: in an argument array (string.Format(provider, format, new object[] { pair }); likewise the array that
+    /// FormattableString.Invariant($"{pair}") formats, whose types the allowlist refuses), or as a generic value. Its own
+    /// ToString formats the integer by the device culture, which no provider reaches. A generic value passes on purpose,
+    /// as a generic number does reach the provider: string.Format(CultureInfo.InvariantCulture, "{0}", value) is a near
+    /// miss in CleanNearMissSample.</description></item>
     /// </list>
-    /// <see cref="MemberBansPolicy"/> lets more through, as it refuses no type: number text and text order through the
-    /// members of types this allowlist leaves out, which the bans do not name. For example Convert.ToString(int),
-    /// TextWriter.Write(int), double.ToString(), string.Create(null, $"…") (the interpolation handler keeps the provider
-    /// in a local) and enumerating a ConcurrentDictionary through its own GetEnumerator.
+    /// <see cref="MemberBansPolicy"/> lets more through, as it refuses no type: number text, text order and the platform
+    /// newline through the members of types this allowlist leaves out, which the bans do not name. For example
+    /// double.ToString(), string.Create(null, $"…") (the interpolation handler keeps the provider in a local),
+    /// TextWriter.WriteLine, Console.WriteLine and Environment.NewLine (the platform newline), and enumerating a
+    /// ConcurrentDictionary through its own GetEnumerator.
     /// </remarks>
     internal sealed class UnityBoundApiPolicy : IPlatformApiPolicy
     {
@@ -48,6 +57,8 @@ namespace PuzzleCore.Tests.Support
         private const string LinguisticOrder = "orders text by the device culture or by the platform's collation tables (ICU, NLS and Mono differ); use StringComparer.Ordinal";
         private const string NullCulture = "depends on the device culture: a null provider or culture stands for it; pass CultureInfo.InvariantCulture";
         private const string CultureComparison = "depends on the device culture unless the comparison is StringComparison.Ordinal or OrdinalIgnoreCase, written at the call; this call passes ";
+        private const string WriterCulture = "depends on the device culture: a writer formats a value by its FormatProvider, the device culture unless the writer was made with another; write text formatted with CultureInfo.InvariantCulture";
+        private const string TupleText = "depends on the device culture: a provider does not reach a tuple or a pair, whose own ToString formats the numbers it holds by the device culture; format the items with CultureInfo.InvariantCulture";
 
         /// <summary>The only StringComparison values that compare text the same on every device: Ordinal and OrdinalIgnoreCase.</summary>
         private static readonly int[] OrdinalComparisons = { (int)StringComparison.Ordinal, (int)StringComparison.OrdinalIgnoreCase };
@@ -61,6 +72,13 @@ namespace PuzzleCore.Tests.Support
         private static readonly string[] IntegerTypes =
         {
             "System.Byte", "System.SByte", "System.Int16", "System.UInt16", "System.Int32", "System.UInt32", "System.Int64", "System.UInt64",
+        };
+
+        /// <summary>The platform's handlers for an interpolated string ($"…"), each of which formats the holes it is given.</summary>
+        private static readonly string[] InterpolationHandlers =
+        {
+            "System.Runtime.CompilerServices.DefaultInterpolatedStringHandler", "System.Text.StringBuilder+AppendInterpolatedStringHandler",
+            "System.MemoryExtensions+TryWriteInterpolatedStringHandler", "System.Text.Unicode.Utf8+TryWriteInterpolatedStringHandler",
         };
 
         public static UnityBoundApiPolicy Default { get; } = new UnityBoundApiPolicy(DefaultTypes(), DefaultBans());
@@ -309,37 +327,64 @@ namespace PuzzleCore.Tests.Support
             }
 
             bans.Add(new MemberBan("System.String", "Format", WithParameters(parameters => parameters.Count == 0 || parameters[0] != "System.IFormatProvider"), Culture));
-            // Concat<T> and Join<T> call T.ToString(); with T = string that is the text itself.
-            bans.Add(new MemberBan("System.String", "Concat",
-                use => use.Parameters.Any(parameter => IsObjectOrGeneric(parameter.Display)) && !JoinsOnlyText(use), Culture));
-            bans.Add(new MemberBan("System.String", "Join",
-                use => use.Parameters.Skip(1).Any(parameter => IsObjectOrGeneric(parameter.Display)) && !JoinsOnlyText(use), Culture));
+            // Concat<T>, Join<T> and AppendJoin<T> call T.ToString(); with T = string that is the text itself.
+            bans.Add(new MemberBan("System.String", "Concat", JoinsValues, Culture));
+            bans.Add(new MemberBan("System.String", "Join", JoinsValues, Culture));
             bans.Add(new MemberBan("System.Char", "ToUpper", WithParameters(parameters => parameters.Count == 1), Culture));
             bans.Add(new MemberBan("System.Char", "ToLower", WithParameters(parameters => parameters.Count == 1), Culture));
 
-            bans.Add(new MemberBan("System.Text.StringBuilder", "Append",
-                WithParameters(parameters => parameters.Count == 1 && (IntegerTypes.Contains(parameters[0]) || IsObjectOrGeneric(parameters[0]))), Culture));
-            bans.Add(new MemberBan("System.Text.StringBuilder", "Insert",
-                WithParameters(parameters => parameters.Count == 2 && (IntegerTypes.Contains(parameters[1]) || IsObjectOrGeneric(parameters[1]))), Culture));
+            bans.Add(new MemberBan("System.Text.StringBuilder", "Append", WithParameters(FormatsAValue), Culture));
+            // Insert's first parameter is the index it inserts at.
+            bans.Add(new MemberBan("System.Text.StringBuilder", "Insert", WithParameters(parameters => FormatsAValue(parameters.Skip(1).ToList())), Culture));
             bans.Add(new MemberBan("System.Text.StringBuilder", "AppendFormat",
                 WithParameters(parameters => parameters.Count == 0 || parameters[0] != "System.IFormatProvider"), Culture));
+            bans.Add(new MemberBan("System.Text.StringBuilder", "AppendJoin", JoinsValues, Culture));
             bans.Add(new MemberBan("System.Text.StringBuilder", "AppendLine", _ => true, Newline));
+
+            // A writer formats a number or an object by its FormatProvider, which is the device culture unless the writer was
+            // made with another, and the walk cannot see which; Console writes through Console.Out, which formats so.
+            foreach (string writer in new[] { "System.IO.TextWriter", "System.Console" })
+            {
+                bans.Add(new MemberBan(writer, "Write", WithParameters(FormatsAValue), WriterCulture));
+                bans.Add(new MemberBan(writer, "WriteLine", WithParameters(FormatsAValue), WriterCulture));
+            }
+
+            // Convert.ToString(value, toBase) writes the digits in a number base, which no culture changes.
+            bans.Add(new MemberBan("System.Convert", "ToString",
+                WithParameters(parameters => !parameters.Contains("System.IFormatProvider") && FormatsAValue(parameters)), Culture));
 
             // C# 10 and later compile $"…{n}" to these handlers; without a provider they format with the device culture, and
             // CA1305 does not see it (string.Create(CultureInfo.InvariantCulture, $"…") passes one). C# 9 compiles $"…" to
             // string.Format, banned above.
-            bans.Add(new MemberBan("System.Runtime.CompilerServices.DefaultInterpolatedStringHandler", ".ctor",
-                WithParameters(parameters => !parameters.Contains("System.IFormatProvider")), Culture));
-            bans.Add(new MemberBan("System.Text.StringBuilder+AppendInterpolatedStringHandler", ".ctor",
-                WithParameters(parameters => !parameters.Contains("System.IFormatProvider")), Culture));
+            foreach (string handler in InterpolationHandlers)
+            {
+                bans.Add(new MemberBan(handler, ".ctor", WithParameters(parameters => !parameters.Contains("System.IFormatProvider")), Culture));
+            }
+
+            // A provider reaches only a value that formats itself with one (an IFormattable). A tuple or a pair is none: it
+            // formats what it holds by its own ToString, so a number inside prints by the device culture whatever the
+            // provider. The walk sees such a value where it is passed alone; the remarks list where it does not.
+            bans.Add(new MemberBan("System.String", "Format", PassesATupleOfNumbers, TupleText));
+            bans.Add(new MemberBan("System.Text.StringBuilder", "AppendFormat", PassesATupleOfNumbers, TupleText));
+            foreach (string handler in InterpolationHandlers)
+            {
+                bans.Add(new MemberBan(handler, "AppendFormatted", PassesATupleOfNumbers, TupleText));
+            }
+
             bans.Add(new MemberBan("System.Globalization.CultureInfo", "get_CurrentCulture", _ => true, Culture));
             bans.Add(new MemberBan("System.Globalization.CultureInfo", "get_CurrentUICulture", _ => true, Culture));
 
             // ToString called through System.Object names no integer type: a boxed integer, a nullable, pair or tuple that
             // holds one, and a generic T all reach it, so the ban judges the receiver the walk knows (box and the
-            // constrained. prefix keep the value's own type). System.ValueType.ToString needs no ban: C# names it only for
+            // constrained. prefix keep the value's own type). The ToString() of a FormattableString or an IFormattable
+            // formats by the device culture as well. System.ValueType.ToString needs no ban: C# names it only for
             // base.ToString() in a struct, whose receiver is that struct, and it prints the struct's type name.
-            bans.Add(new MemberBan("System.Object", "ToString", use => FormatsAnInteger(use.Instance), Culture));
+            bans.Add(new MemberBan("System.Object", "ToString", use => ToStringFormatsByCulture(use.Instance), Culture));
+
+            // FormattableStringFactory.Create only keeps a format and its values. What formats them is the FormattableString's
+            // ToString() (above), its ToString(provider) given null (the rule over every call) or CurrentCulture;
+            // FormattableString.Invariant formats them with the invariant culture.
+            bans.Add(new MemberBan("System.FormattableString", "CurrentCulture", _ => true, Culture));
 
             // Text order: only an ordinal comparison orders strings the same on every device and runtime. A comparer-less
             // sort, sorted collection or Comparer<T>.Default over text compares by the device culture.
@@ -448,9 +493,38 @@ namespace PuzzleCore.Tests.Support
             || parameter.StartsWith("System.Collections.Generic.IEnumerable`1<!", StringComparison.Ordinal)
             || parameter.StartsWith("System.ReadOnlySpan`1<System.Object>", StringComparison.Ordinal);
 
-        /// <summary>A generic Concat or Join over strings only, such as string.Join&lt;string&gt;(", ", names).</summary>
+        /// <summary>
+        /// A generic Concat, Join or AppendJoin over strings only, such as builder.AppendJoin(", ", names) with a
+        /// List&lt;string&gt;, for which StringBuilder has no overload of its own.
+        /// </summary>
         private static bool JoinsOnlyText(MemberUse use) =>
             use.MethodTypeArguments.Count > 0 && use.MethodTypeArguments.All(argument => argument.DefinitionName == "System.String");
+
+        /// <summary>
+        /// Whether a Concat, Join or AppendJoin is given values to join (an object, an object array or span, or a sequence
+        /// of T), each of which it formats by the value's own ToString; a generic one over strings only joins text. No
+        /// separator is an object.
+        /// </summary>
+        private static bool JoinsValues(MemberUse use) =>
+            use.Parameters.Any(parameter => IsObjectOrGeneric(parameter.Display)) && !JoinsOnlyText(use);
+
+        /// <summary>
+        /// Whether an overload formats a value it is given instead of copying text: a lone integer (Append(long),
+        /// Write(int)), or an object or a generic value (Append(object), Write(string, object), Write(string, params
+        /// object[])). Text, a char and a bool print the same on every device, and a char array with its index and count
+        /// is text.
+        /// </summary>
+        private static bool FormatsAValue(IReadOnlyList<string> parameters) =>
+            (parameters.Count == 1 && IntegerTypes.Contains(parameters[0])) || parameters.Any(IsObjectOrGeneric);
+
+        /// <summary>
+        /// Whether a call is given a tuple or a pair that holds an integer, as far as the walk knows the values it passes.
+        /// Neither is IFormattable, so the call formats it by its own ToString, which formats what it holds by the device
+        /// culture.
+        /// </summary>
+        private static bool PassesATupleOfNumbers(MemberUse use) =>
+            use.Arguments.Any(argument => argument is not null && IsTupleLike(argument.DefinitionName)
+                && argument.TypeArguments.Any(item => FormatsAnInteger(item)));
 
         /// <summary>
         /// Whether the call passes a comparer: a comparer parameter given anything but null, which stands for the default
@@ -507,6 +581,14 @@ namespace PuzzleCore.Tests.Support
             value is not null
             && (IntegerTypes.Contains(value.DefinitionName) || value.IsGenericParameter
                 || ((value.DefinitionName == "System.Nullable`1" || IsTupleLike(value.DefinitionName)) && value.TypeArguments.Any(argument => FormatsAnInteger(argument))));
+
+        /// <summary>
+        /// Whether a receiver's ToString() formats by the device culture: a value that formats an integer
+        /// (<see cref="FormatsAnInteger"/>), or a FormattableString or an IFormattable, whose ToString() formats with the
+        /// current culture. An unknown receiver counts as none.
+        /// </summary>
+        private static bool ToStringFormatsByCulture(TypeShape? receiver) =>
+            FormatsAnInteger(receiver) || receiver?.DefinitionName is "System.FormattableString" or "System.IFormattable";
 
         private abstract record TypeRule(string TypeName);
 

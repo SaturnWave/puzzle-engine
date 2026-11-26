@@ -15,7 +15,8 @@ namespace PuzzleCore.Tests.Guards
     /// threads, reflection, native calls), culture-dependent text, randomized hashing, unordered enumeration and unstable
     /// sorts. The bans do not see every way to that behaviour: the policy's remarks list the known gaps.
     /// The self-tests prove that the scanners report each planted violation at its member, among them a planted use of
-    /// every member ban, each planted gap the policy let through before and a planted break of every member limit of the
+    /// every member ban, each planted gap the policy let through before, every shape of overload of the members that
+    /// format a value by its own ToString inside the platform, and a planted break of every member limit of the
     /// allowlist; that they stay silent on the clean samples, the near misses of the gaps among them, whose declared types
     /// the allowlist all allows; that the member bans alone (<see cref="MemberBansPolicy"/>) report the planted bans but
     /// refuse no type; and that each known gap the policy's remarks list still passes. Ported from the Block engine.
@@ -32,6 +33,8 @@ namespace PuzzleCore.Tests.Guards
         private const string UnstableSort = "unstable sort";
         private const string ThreadIdentity = "thread identity must not influence results";
         private const string Newline = "Environment.NewLine differs";
+        private const string WriterCulture = "a writer formats a value by its FormatProvider";
+        private const string TupleText = "a provider does not reach a tuple or a pair";
 
         /// <summary>Begins the reason of a StringComparison the rule refuses; the value the call passes follows.</summary>
         private const string Passes = "unless the comparison is StringComparison.Ordinal or OrdinalIgnoreCase, written at the call; this call passes ";
@@ -143,6 +146,63 @@ namespace PuzzleCore.Tests.Guards
         };
 
         /// <summary>
+        /// The members that format a value by its own ToString inside the platform (Guards/Samples/ValueFormattingSamples.cs),
+        /// beyond the one use each ban plants: every shape of overload of StringBuilder.AppendJoin, string.Join and Concat,
+        /// StringBuilder.Append, Insert and AppendFormat, string.Format, TextWriter, Console and Convert that takes a value; a
+        /// FormattableString's and an IFormattable's ToString(); and a tuple or a pair given to a format with a provider.
+        /// The sample member, the member the violation names, and a fragment of the reason.
+        /// </summary>
+        public static TheoryData<string, string, string> PlantedValueFormatting => new()
+        {
+            { "ValueFormattingSamples::AppendJoinObjects", "System.Text.StringBuilder::AppendJoin", Culture },
+            { "ValueFormattingSamples::AppendJoinObjectsWithChar", "System.Text.StringBuilder::AppendJoin", Culture },
+            { "ValueFormattingSamples::AppendJoinNumbersWithChar", "System.Text.StringBuilder::AppendJoin", Culture },
+            { "ValueFormattingSamples::AppendJoinObjectSpan", "System.Text.StringBuilder::AppendJoin", Culture },
+            { "ValueFormattingSamples::AppendJoinObjectSpanWithChar", "System.Text.StringBuilder::AppendJoin", Culture },
+            { "ValueFormattingSamples::AppendJoinNumberArguments", "System.Text.StringBuilder::AppendJoin", Culture },
+            { "ValueFormattingSamples::AppendJoinGeneric", "System.Text.StringBuilder::AppendJoin", Culture },
+            { "ValueFormattingSamples::JoinObjects", "System.String::Join", Culture },
+            { "ValueFormattingSamples::JoinObjectsWithChar", "System.String::Join", Culture },
+            { "ValueFormattingSamples::JoinNumbersWithChar", "System.String::Join", Culture },
+            { "ValueFormattingSamples::JoinObjectSpan", "System.String::Join", Culture },
+            { "ValueFormattingSamples::JoinNumberArguments", "System.String::Join", Culture },
+            { "ValueFormattingSamples::ConcatObject", "System.String::Concat", Culture },
+            { "ValueFormattingSamples::ConcatThreeObjects", "System.String::Concat", Culture },
+            { "ValueFormattingSamples::ConcatObjects", "System.String::Concat", Culture },
+            { "ValueFormattingSamples::ConcatNumberArguments", "System.String::Concat", Culture },
+            { "ValueFormattingSamples::ConcatNumbers", "System.String::Concat", Culture },
+            { "ValueFormattingSamples::AppendObject", "System.Text.StringBuilder::Append", Culture },
+            { "ValueFormattingSamples::InsertObject", "System.Text.StringBuilder::Insert", Culture },
+            { "ValueFormattingSamples::AppendFormatTwoValues", "System.Text.StringBuilder::AppendFormat", Culture },
+            { "ValueFormattingSamples::AppendFormatArray", "System.Text.StringBuilder::AppendFormat", Culture },
+            { "ValueFormattingSamples::AppendFormatNumberArguments", "System.Text.StringBuilder::AppendFormat", Culture },
+            { "ValueFormattingSamples::FormatTwoValues", "System.String::Format", Culture },
+            { "ValueFormattingSamples::FormatArray", "System.String::Format", Culture },
+            { "ValueFormattingSamples::FormatNumberArguments", "System.String::Format", Culture },
+            { "ValueFormattingSamples::FormattableStringToString", "System.Object::ToString", Culture },
+            { "ValueFormattingSamples::CreatedFormattableStringToString", "System.Object::ToString", Culture },
+            { "ValueFormattingSamples::FormattableToString", "System.Object::ToString", Culture },
+            { "ValueFormattingSamples::FormattableNumberToString", "System.Object::ToString", Culture },
+            { "ValueFormattingSamples::WriteObject", "System.IO.TextWriter::Write", WriterCulture },
+            { "ValueFormattingSamples::WriteFormat", "System.IO.TextWriter::Write", WriterCulture },
+            { "ValueFormattingSamples::WriteFormatArray", "System.IO.TextWriter::Write", WriterCulture },
+            { "ValueFormattingSamples::WriteNumberArguments", "System.IO.TextWriter::Write", WriterCulture },
+            { "ValueFormattingSamples::StreamWriterWrite", "System.IO.TextWriter::Write", WriterCulture },
+            { "ValueFormattingSamples::WriteLineNumber", "System.IO.TextWriter::WriteLine", WriterCulture },
+            { "ValueFormattingSamples::WriteLineFormat", "System.IO.TextWriter::WriteLine", WriterCulture },
+            { "ValueFormattingSamples::ConsoleWriteObject", "System.Console::Write", WriterCulture },
+            { "ValueFormattingSamples::ConsoleWriteFormat", "System.Console::Write", WriterCulture },
+            { "ValueFormattingSamples::ConsoleWriteLineNumber", "System.Console::WriteLine", WriterCulture },
+            { "ValueFormattingSamples::ConsoleOutWrite", "System.IO.TextWriter::Write", WriterCulture },
+            { "ValueFormattingSamples::ConvertObject", "System.Convert::ToString", Culture },
+            { "ValueFormattingSamples::FormatTupleWithProvider", "System.String::Format", TupleText },
+            { "ValueFormattingSamples::FormatPairWithProvider", "System.String::Format", TupleText },
+            { "ValueFormattingSamples::FormatTupleWithCompositeFormat", "System.String::Format", TupleText },
+            { "ValueFormattingSamples::AppendFormatTupleWithProvider", "System.Text.StringBuilder::AppendFormat", TupleText },
+            { "ValueFormattingSamples::InterpolatedTupleOfGeneric", "System.Runtime.CompilerServices.DefaultInterpolatedStringHandler::AppendFormatted", TupleText },
+        };
+
+        /// <summary>
         /// One planted use of each member ban (Guards/Samples/MemberBanSamples.cs): the sample member, the banned member
         /// it uses, as Type::Member without generic arguments, and a fragment of the ban's reason.
         /// </summary>
@@ -188,10 +248,23 @@ namespace PuzzleCore.Tests.Guards
             { "MemberBanSamples::StringBuilderAppend", "System.Text.StringBuilder::Append", Culture },
             { "MemberBanSamples::StringBuilderInsert", "System.Text.StringBuilder::Insert", Culture },
             { "MemberBanSamples::StringBuilderAppendFormat", "System.Text.StringBuilder::AppendFormat", Culture },
+            { "MemberBanSamples::StringBuilderAppendJoin", "System.Text.StringBuilder::AppendJoin", Culture },
             { "MemberBanSamples::StringBuilderAppendLine", "System.Text.StringBuilder::AppendLine", Newline },
             { "MemberBanSamples::InterpolatedString", "System.Runtime.CompilerServices.DefaultInterpolatedStringHandler::.ctor", Culture },
             { "MemberBanSamples::InterpolatedAppend", "System.Text.StringBuilder+AppendInterpolatedStringHandler::.ctor", Culture },
+            { "MemberBanSamples::InterpolatedSpanWrite", "System.MemoryExtensions+TryWriteInterpolatedStringHandler::.ctor", Culture },
+            { "MemberBanSamples::InterpolatedUtf8Write", "System.Text.Unicode.Utf8+TryWriteInterpolatedStringHandler::.ctor", Culture },
+            { "MemberBanSamples::InterpolatedTuple", "System.Runtime.CompilerServices.DefaultInterpolatedStringHandler::AppendFormatted", TupleText },
+            { "MemberBanSamples::InterpolatedAppendTuple", "System.Text.StringBuilder+AppendInterpolatedStringHandler::AppendFormatted", TupleText },
+            { "MemberBanSamples::InterpolatedSpanWriteTuple", "System.MemoryExtensions+TryWriteInterpolatedStringHandler::AppendFormatted", TupleText },
+            { "MemberBanSamples::InterpolatedUtf8WriteTuple", "System.Text.Unicode.Utf8+TryWriteInterpolatedStringHandler::AppendFormatted", TupleText },
             { "MemberBanSamples::ObjectToString", "System.Object::ToString", Culture },
+            { "MemberBanSamples::FormattableStringCurrentCulture", "System.FormattableString::CurrentCulture", Culture },
+            { "MemberBanSamples::ConvertToString", "System.Convert::ToString", Culture },
+            { "MemberBanSamples::TextWriterWrite", "System.IO.TextWriter::Write", WriterCulture },
+            { "MemberBanSamples::TextWriterWriteLine", "System.IO.TextWriter::WriteLine", WriterCulture },
+            { "MemberBanSamples::ConsoleWrite", "System.Console::Write", WriterCulture },
+            { "MemberBanSamples::ConsoleWriteLine", "System.Console::WriteLine", WriterCulture },
             { "MemberBanSamples::CurrentCulture", "System.Globalization.CultureInfo::get_CurrentCulture", Culture },
             { "MemberBanSamples::CurrentUICulture", "System.Globalization.CultureInfo::get_CurrentUICulture", Culture },
             { "MemberBanSamples::CurrentCultureComparer", "System.StringComparer::get_CurrentCulture", TextOrder },
@@ -412,6 +485,13 @@ namespace PuzzleCore.Tests.Guards
             AssertReportedUnderBothPolicies(Samples + member, usedMember, reasonFragment);
         }
 
+        [Theory]
+        [MemberData(nameof(PlantedValueFormatting))]
+        public void Each_planted_value_formatting_is_reported_under_both_policies(string member, string usedMember, string reasonFragment)
+        {
+            AssertReportedUnderBothPolicies(Samples + member, usedMember, reasonFragment);
+        }
+
         [Fact]
         public void Every_member_ban_has_a_planted_use()
         {
@@ -463,10 +543,12 @@ namespace PuzzleCore.Tests.Guards
         [InlineData("PolicyEdgeSamples::HoldsReferences")]
         [InlineData("PolicyEdgeSamples::CountOfTimes")]
         // Known gaps of the member bans alone (the policy's remarks): only the allowlist keeps these out.
-        [InlineData("KnownGapSamples::NumberTextThroughConvert")]
-        [InlineData("KnownGapSamples::NumberTextThroughWriter")]
         [InlineData("KnownGapSamples::FloatingPointText")]
         [InlineData("KnownGapSamples::NullProviderOfInterpolation")]
+        [InlineData("KnownGapSamples::TupleInAFormattableString")]
+        [InlineData("KnownGapSamples::PlatformNewlineThroughWriter")]
+        [InlineData("KnownGapSamples::PlatformNewlineThroughConsole")]
+        [InlineData("KnownGapSamples::PlatformNewline")]
         [InlineData("KnownGapSamples::ConcurrentDictionaryOrder")]
         public void The_member_bans_alone_pass_a_method_that_the_allowlist_refuses(string member)
         {
@@ -493,6 +575,7 @@ namespace PuzzleCore.Tests.Guards
         [InlineData("KnownGapSamples::NumberInAnObjectArray")]
         [InlineData("KnownGapSamples::ComparisonThroughDelegate")]
         [InlineData("KnownGapSamples::EnumValueOutsideItsMembers")]
+        [InlineData("KnownGapSamples::TupleInAnArgumentArray")]
         public void The_known_gaps_in_the_policy_remarks_pass_both_policies(string member)
         {
             string at = Samples + member;

@@ -3,9 +3,11 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Unicode;
 
 // Every member below makes one banned call on purpose, so the guard tests can prove that each member ban reports its
 // use. The analyzers would (rightly) reject several of them, hence the local suppressions.
@@ -103,13 +105,44 @@ namespace PuzzleCore.Tests.Guards.Samples
 
         public static StringBuilder StringBuilderAppendFormat(StringBuilder builder, int pieces) => builder.AppendFormat("{0} pieces", pieces);
 
+        public static StringBuilder StringBuilderAppendJoin(StringBuilder builder, List<int> values) => builder.AppendJoin(", ", values);
+
         public static StringBuilder StringBuilderAppendLine(StringBuilder builder) => builder.AppendLine();
 
         public static string InterpolatedString(int pieces) => $"{pieces} pieces";
 
         public static StringBuilder InterpolatedAppend(StringBuilder builder, int pieces) => builder.Append($"{pieces} pieces");
 
+        public static bool InterpolatedSpanWrite(Span<char> destination, int pieces) => destination.TryWrite($"{pieces} pieces", out _);
+
+        public static bool InterpolatedUtf8Write(Span<byte> destination, int pieces) => Utf8.TryWrite(destination, $"{pieces} pieces", out _);
+
+        // A tuple through an interpolation with a provider: the provider does not reach the numbers it holds.
+        public static string InterpolatedTuple(int first, int second) => string.Create(CultureInfo.InvariantCulture, $"{(first, second)}");
+
+        public static StringBuilder InterpolatedAppendTuple(StringBuilder builder, int first, int second) =>
+            builder.Append(CultureInfo.InvariantCulture, $"{(first, second)}");
+
+        public static bool InterpolatedSpanWriteTuple(Span<char> destination, int first, int second) =>
+            destination.TryWrite(CultureInfo.InvariantCulture, $"{(first, second)}", out _);
+
+        public static bool InterpolatedUtf8WriteTuple(Span<byte> destination, int first, int second) =>
+            Utf8.TryWrite(destination, CultureInfo.InvariantCulture, $"{(first, second)}", out _);
+
         public static string ObjectToString(long value) => ((object)value).ToString()!;
+
+        public static string FormattableStringCurrentCulture(int pieces) => FormattableString.CurrentCulture($"{pieces} pieces");
+
+        public static string ConvertToString(int value) => Convert.ToString(value);
+
+        // A writer formats a value by its FormatProvider; Console writes through Console.Out.
+        public static void TextWriterWrite(TextWriter writer, int value) => writer.Write(value);
+
+        public static void TextWriterWriteLine(TextWriter writer, object value) => writer.WriteLine(value);
+
+        public static void ConsoleWrite(long value) => Console.Write(value);
+
+        public static void ConsoleWriteLine(int pieces) => Console.WriteLine("{0} pieces", pieces);
 
         public static CultureInfo CurrentCulture() => CultureInfo.CurrentCulture;
 

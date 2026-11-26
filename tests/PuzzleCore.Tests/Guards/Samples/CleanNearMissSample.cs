@@ -2,13 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 
 namespace PuzzleCore.Tests.Guards.Samples
 {
     /// <summary>
-    /// Near misses of the planted gaps in <see cref="PolicyGapSamples"/>: the same shapes on values whose text does not
-    /// depend on the device culture, or with the invariant culture passed. The guard tests expect no violation here, so a
-    /// rule that refuses more than its gap shows up at once.
+    /// Near misses of the planted gaps in <see cref="PolicyGapSamples"/> and <see cref="ValueFormattingSamples"/>: the
+    /// same shapes on values whose text does not depend on the device culture, or with the invariant culture passed. The
+    /// guard tests expect no violation here, so a rule that refuses more than its gap shows up at once.
     /// </summary>
     internal static class CleanNearMissSample
     {
@@ -79,6 +80,44 @@ namespace PuzzleCore.Tests.Guards.Samples
             values.CopyTo(copy);
             return copy;
         }
+
+        // Text joined, and overloads whose integers are an index or a count: nothing is formatted by the device culture.
+        public static StringBuilder AppendJoinText(StringBuilder builder, string[] names) => builder.AppendJoin(", ", names);
+
+        public static StringBuilder AppendJoinTextWithChar(StringBuilder builder, string[] names) => builder.AppendJoin(',', names);
+
+        public static StringBuilder AppendJoinTextList(StringBuilder builder, List<string> names) => builder.AppendJoin(", ", names);
+
+        public static StringBuilder AppendJoinTextListWithChar(StringBuilder builder, List<string> names) => builder.AppendJoin(',', names);
+
+        public static StringBuilder AppendJoinTextSpan(StringBuilder builder, string[] names) => builder.AppendJoin(", ", (ReadOnlySpan<string?>)names);
+
+        public static StringBuilder AppendJoinTextSpanWithChar(StringBuilder builder, string[] names) => builder.AppendJoin(',', (ReadOnlySpan<string?>)names);
+
+        public static string JoinTextWithChar(string[] names) => string.Join(',', names);
+
+        public static string JoinTextSpan(string[] names) => string.Join(", ", (ReadOnlySpan<string?>)names);
+
+        public static string ConcatTextSequence(IEnumerable<string> names) => string.Concat(names);
+
+        public static string ConcatTextArray(string[] names) => string.Concat(names);
+
+        public static StringBuilder AppendTruth(StringBuilder builder, bool value) => builder.Append(value);
+
+        public static StringBuilder AppendRepeatedLetter(StringBuilder builder) => builder.Append('-', 3);
+
+        public static StringBuilder AppendPartOfText(StringBuilder builder, string text) => builder.Append(text, 1, 2);
+
+        public static StringBuilder InsertRepeatedText(StringBuilder builder, string text) => builder.Insert(0, text, 2);
+
+        // A format with a provider over a tuple or a pair of text, and over a nullable number, which formats as the number.
+        public static string FormatTupleOfTextWithProvider(string first, string second) =>
+            string.Format(CultureInfo.InvariantCulture, "{0}", (first, second));
+
+        public static string FormatNullableNumberWithProvider(int? value) => string.Format(CultureInfo.InvariantCulture, "{0}", value);
+
+        public static StringBuilder AppendFormatPairOfTextWithProvider(StringBuilder builder, KeyValuePair<string, string> pair) =>
+            builder.AppendFormat(CultureInfo.InvariantCulture, "{0}", pair);
     }
 
     /// <summary>An enum of the sample's own: its ToString prints the member's name.</summary>
