@@ -596,7 +596,7 @@ Covered Lot and Sealed Vials are built in parallel, each by its own Claude Code 
 | `bench`, the default `NodeBudget`s and the PuzzleCore-family consumer compile test | Covered Lot session | P9 | No default budgets: every caller passes its own. Sort measures its own budgets as its core is built |
 | Meta rules and economy numbers in §7 | Covered Lot session, agreed with the Sealed Vials session and approved by the user | P14 | §7's "To design" list; none of it is built |
 | The shared client package (`Shared.Client`) | Whichever session reaches its Unity work first; the other extends it additively | Covered Lot: P11 | It does not exist yet. It goes in the engine repo |
-| The Unity editor version | Whichever session reaches its Unity work first | Covered Lot: P11 | None is chosen yet; it is recorded below |
+| The Unity editor version | Whichever session reaches its Unity work first | Covered Lot: the simple Unity UI after P5 (delivered) | Unity 6000.3.29f1, recorded below |
 | Sort's modules: `PuzzleCore.Sort`, Sort's events, its position solver, `SortClues`, its generator and its bots | Sealed Vials session | The Sealed Vials plan | Covered Lot assumes nothing from them. Any PuzzleCore change they need is small and additive (Q53) |
 
-**Unity editor version:** not chosen yet. The first session to start its Unity work installs the newest Unity LTS (Q36), records the exact version here and creates the shared client package. The other session uses the same version (Q55).
+**Unity editor version:** **6000.3.29f1** (Unity 6.3 LTS, changeset `96d2fe17529c`). Covered Lot chose it when it started its Unity work, the simple Unity UI right after P5, because 6.3 was then the newest LTS (Q36). The other session uses the same version (Q55). The shared client package is still Covered Lot's P11 work: the simple UI does not create it.
