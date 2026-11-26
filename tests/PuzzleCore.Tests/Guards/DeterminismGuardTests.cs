@@ -25,6 +25,9 @@ namespace PuzzleCore.Tests.Guards
 
         private const string Culture = "depends on the device culture";
         private const string NullCulture = "a null provider or culture stands for it";
+
+        /// <summary>Begins the reason of a StringComparison the rule refuses; the value the call passes follows.</summary>
+        private const string Passes = "unless the comparison is StringComparison.Ordinal or OrdinalIgnoreCase, written at the call; this call passes ";
         private const string TextOrder = "orders text by the device culture";
         private const string RandomizedHash = "hash codes are randomized per process";
         private const string HashOrder = "enumeration order is an implementation detail";
@@ -81,6 +84,7 @@ namespace PuzzleCore.Tests.Guards
             { "PolicyEdgeSamples::SumOfSetInterface", HashOrder },
             { "PolicyEdgeSamples::SetCopiedThroughCollection", HashOrder },
             { "PolicyEdgeSamples::ValuesOfPairs", HashOrder },
+            { "PolicyEdgeSamples::ChoiceOfOrdinalComparisons", Passes + "a value the scan cannot read" },
             { "HandWrittenMembers::.ctor", ThreadIdentity },
             { "HandWrittenMembers::ToString", Culture },
             { "HandWrittenMembers::GetHashCode", Culture },
@@ -111,6 +115,21 @@ namespace PuzzleCore.Tests.Guards
             { "PolicyGapSamples::NullCultureToUpper", "System.String::ToUpper", NullCulture },
             { "PolicyGapSamples::OrderByNullComparer", "System.Linq.Enumerable::OrderBy", TextOrder },
             { "PolicyGapSamples::SortedSetNullComparer", "System.Collections.Generic.SortedSet`1::.ctor", TextOrder },
+            { "PolicyGapSamples::EqualsCurrentCulture", "System.String::Equals", Passes + "StringComparison.CurrentCulture" },
+            { "PolicyGapSamples::StaticEqualsInvariantCulture", "System.String::Equals", Passes + "StringComparison.InvariantCulture" },
+            { "PolicyGapSamples::CompareCurrentCulture", "System.String::Compare", Passes + "StringComparison.CurrentCulture" },
+            { "PolicyGapSamples::StartsWithCurrentCultureIgnoreCase", "System.String::StartsWith", Passes + "StringComparison.CurrentCultureIgnoreCase" },
+            { "PolicyGapSamples::EndsWithInvariantCultureIgnoreCase", "System.String::EndsWith", Passes + "StringComparison.InvariantCultureIgnoreCase" },
+            { "PolicyGapSamples::IndexOfCurrentCulture", "System.String::IndexOf", Passes + "StringComparison.CurrentCulture" },
+            { "PolicyGapSamples::LastIndexOfCurrentCulture", "System.String::LastIndexOf", Passes + "StringComparison.CurrentCulture" },
+            { "PolicyGapSamples::ContainsCurrentCulture", "System.String::Contains", Passes + "StringComparison.CurrentCulture" },
+            { "PolicyGapSamples::SpanEqualsCurrentCulture", "System.MemoryExtensions::Equals", Passes + "StringComparison.CurrentCulture" },
+            { "PolicyGapSamples::ComparisonFromParameter", "System.String::Equals", Passes + "a value the scan cannot read" },
+            { "PolicyGapSamples::ComparisonFromLocal", "System.String::Equals", Passes + "a value the scan cannot read" },
+            { "PolicyGapSamples::ComparisonMinusOne", "System.String::Equals", Passes + "the number -1" },
+            { "PolicyGapSamples::ComparisonEight", "System.String::Equals", Passes + "the number 8" },
+            { "PolicyGapSamples::ComparisonOneHundred", "System.String::Equals", Passes + "the number 100" },
+            { "PolicyGapSamples::ComparisonOneThousand", "System.String::Equals", Passes + "the number 1000" },
         };
 
         /// <summary>

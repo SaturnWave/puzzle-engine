@@ -6,7 +6,7 @@ using System.Text;
 
 // Every member below breaks a determinism rule on purpose. The analyzers would (rightly) reject some of them in a .NET
 // build, hence the local suppressions; Unity runs no analyzers, so the IL scan is what must see them.
-#pragma warning disable CA1304, CA1305, CA1311
+#pragma warning disable CA1304, CA1305, CA1309, CA1311
 
 namespace PuzzleCore.Tests.Guards.Samples
 {
@@ -62,6 +62,44 @@ namespace PuzzleCore.Tests.Guards.Samples
         public static List<string> OrderByNullComparer(IEnumerable<string> names) => names.OrderBy(name => name, null).ToList();
 
         public static SortedSet<string> SortedSetNullComparer() => new SortedSet<string>((IComparer<string>?)null);
+
+        // A StringComparison other than Ordinal and OrdinalIgnoreCase: the overload takes one, so the bans on the overloads
+        // without one let it through. Every string member that takes a comparison, and the span ones, are judged alike.
+        public static bool EqualsCurrentCulture(string first, string second) => first.Equals(second, StringComparison.CurrentCulture);
+
+        public static bool StaticEqualsInvariantCulture(string first, string second) => string.Equals(first, second, StringComparison.InvariantCulture);
+
+        public static int CompareCurrentCulture(string first, string second) => string.Compare(first, second, StringComparison.CurrentCulture);
+
+        public static bool StartsWithCurrentCultureIgnoreCase(string text) => text.StartsWith("gold", StringComparison.CurrentCultureIgnoreCase);
+
+        public static bool EndsWithInvariantCultureIgnoreCase(string text) => text.EndsWith("gold", StringComparison.InvariantCultureIgnoreCase);
+
+        public static int IndexOfCurrentCulture(string text) => text.IndexOf("gold", StringComparison.CurrentCulture);
+
+        public static int LastIndexOfCurrentCulture(string text) => text.LastIndexOf("gold", StringComparison.CurrentCulture);
+
+        public static bool ContainsCurrentCulture(string text) => text.Contains("gold", StringComparison.CurrentCulture);
+
+        public static bool SpanEqualsCurrentCulture(string first, string second) => first.AsSpan().Equals(second.AsSpan(), StringComparison.CurrentCulture);
+
+        // A comparison the walk cannot read, which may be any value.
+        public static bool ComparisonFromParameter(string first, string second, StringComparison comparison) => first.Equals(second, comparison);
+
+        public static bool ComparisonFromLocal(string first, string second)
+        {
+            StringComparison comparison = StringComparison.CurrentCulture;
+            return first.Equals(second, comparison);
+        }
+
+        // Values outside the enum, one per form of ldc.i4 that pushes them: .m1, .8, .s and the four-byte form.
+        public static bool ComparisonMinusOne(string first, string second) => first.Equals(second, (StringComparison)(-1));
+
+        public static bool ComparisonEight(string first, string second) => first.Equals(second, (StringComparison)8);
+
+        public static bool ComparisonOneHundred(string first, string second) => first.Equals(second, (StringComparison)100);
+
+        public static bool ComparisonOneThousand(string first, string second) => first.Equals(second, (StringComparison)1000);
     }
 
     /// <summary>A generic type whose own parameter (!0) is the receiver, as in an Option&lt;T&gt;.ToString.</summary>

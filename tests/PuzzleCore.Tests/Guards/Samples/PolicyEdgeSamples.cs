@@ -104,6 +104,10 @@ namespace PuzzleCore.Tests.Guards.Samples
         // Key-value pairs of unknown order through LINQ: only the LINQ-over-pairs rule sees it.
         public static List<int> ValuesOfPairs(IEnumerable<KeyValuePair<string, int>> pairs) => pairs.Select(pair => pair.Value).ToList();
 
+        // Two constants that meet where control merges: the walk keeps neither, so the comparison is a value it cannot read.
+        public static bool ChoiceOfOrdinalComparisons(string first, string second, bool ignoreCase) =>
+            first.Equals(second, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
         // Each member limit of the allowlist, broken by a member left out of it.
         public static string TextInSwedish(int value) => value.ToString(CultureInfo.GetCultureInfo("sv-SE"));
 

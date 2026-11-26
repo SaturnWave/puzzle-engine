@@ -37,6 +37,12 @@ namespace PuzzleCore.Tests.Support
         /// <summary>Whether this is <see cref="NullReference"/>; false for every type.</summary>
         public bool IsNullReference { get; private init; }
 
+        /// <summary>
+        /// The value of an Int32 constant that the IL walk saw pushed (ldc.i4), such as 4 for StringComparison.Ordinal;
+        /// null for a type read from a signature and for every other value.
+        /// </summary>
+        public int? Constant { get; init; }
+
         /// <summary>The type arguments of a generic instantiation (String and Int32 of Dictionary`2&lt;String,Int32&gt;); empty otherwise.</summary>
         public ImmutableArray<TypeShape> TypeArguments { get; init; } = ImmutableArray<TypeShape>.Empty;
 
@@ -730,6 +736,7 @@ namespace PuzzleCore.Tests.Support
                 {
                     Variable = VariableIndex(opCode, il, operandStart),
                     Targets = BranchTargets(opCode.OperandType, il, operandStart, next: offset),
+                    Constant = Int32Constant(opCode, il, operandStart),
                 };
             }
         }
@@ -755,6 +762,30 @@ namespace PuzzleCore.Tests.Support
         {
             OpCodes.Ldarg_0.Value, OpCodes.Ldarg_1.Value, OpCodes.Ldarg_2.Value, OpCodes.Ldarg_3.Value,
             OpCodes.Ldloc_0.Value, OpCodes.Ldloc_1.Value, OpCodes.Ldloc_2.Value, OpCodes.Ldloc_3.Value,
+        };
+
+        /// <summary>The Int32 an ldc.i4 pushes, implied by ldc.i4.m1 to ldc.i4.8 or read from its operand; null for any other instruction.</summary>
+        private static int? Int32Constant(OpCode opCode, byte[] il, int operandStart)
+        {
+            int implied = Array.IndexOf(ImpliedConstantOpCodes, opCode.Value);
+            if (implied >= 0)
+            {
+                return implied - 1;
+            }
+
+            if (opCode == OpCodes.Ldc_I4_S)
+            {
+                return unchecked((sbyte)il[operandStart]);
+            }
+
+            return opCode == OpCodes.Ldc_I4 ? BinaryPrimitives.ReadInt32LittleEndian(il.AsSpan(operandStart)) : null;
+        }
+
+        /// <summary>ldc.i4.m1 to ldc.i4.8, each at the index one above the value it pushes.</summary>
+        private static readonly short[] ImpliedConstantOpCodes =
+        {
+            OpCodes.Ldc_I4_M1.Value, OpCodes.Ldc_I4_0.Value, OpCodes.Ldc_I4_1.Value, OpCodes.Ldc_I4_2.Value, OpCodes.Ldc_I4_3.Value,
+            OpCodes.Ldc_I4_4.Value, OpCodes.Ldc_I4_5.Value, OpCodes.Ldc_I4_6.Value, OpCodes.Ldc_I4_7.Value, OpCodes.Ldc_I4_8.Value,
         };
 
         /// <summary>The offsets a branch or switch may jump to; empty for any other instruction.</summary>
@@ -847,6 +878,9 @@ namespace PuzzleCore.Tests.Support
 
             /// <summary>Where a branch or switch may jump; empty otherwise.</summary>
             public ImmutableArray<int> Targets { get; init; }
+
+            /// <summary>The Int32 an ldc.i4 pushes, in any of its forms; null for any other instruction.</summary>
+            public int? Constant { get; init; }
         }
 
         /// <summary>
@@ -868,8 +902,10 @@ namespace PuzzleCore.Tests.Support
         /// takes, and each ldvirtftn with the object it takes. One forward walk tracks the evaluation stack: a value loaded
         /// from an argument, a local or a field, returned by a call, made by newobj or cast keeps its declared type; box
         /// keeps the type of the value it boxes; a callvirt after the constrained. prefix takes a receiver of the prefix's
-        /// type; ldnull pushes <see cref="TypeShape.NullReference"/>; every other value is unknown (null). Where control
-        /// merges, a slot keeps its type only when every path that reached it so far agrees. After an unconditional jump
+        /// type; ldnull pushes <see cref="TypeShape.NullReference"/>; ldc.i4 pushes an Int32 with its
+        /// <see cref="TypeShape.Constant"/>; every other value is unknown (null). Where control merges, a slot keeps its
+        /// type only when every path that reached it so far agrees, and its constant only when they all carry the same one
+        /// (OrdinalIgnoreCase on one path and Ordinal on the other leave an Int32 of no known value). After an unconditional jump
         /// the walk resumes with the stack a forward branch recorded for the target, else with an empty stack (C# leaves
         /// the stack empty at statement boundaries such as loop heads). A value stored into a local loses what the walk
         /// knew of it: loaded again, it has the local's declared type. So the checks built on this see a value only where
@@ -1026,6 +1062,11 @@ namespace PuzzleCore.Tests.Support
                 return TypeShape.NullReference;
             }
 
+            if (instruction.Constant is int constant)
+            {
+                return _shapes.GetPrimitiveType(PrimitiveTypeCode.Int32) with { Constant = constant };
+            }
+
             // box keeps the type of the value it boxes (an int stays an int), so a call on the object still shows it.
             bool keepsOperandType = opCode == OpCodes.Castclass || opCode == OpCodes.Isinst || opCode == OpCodes.Unbox_Any || opCode == OpCodes.Box;
             return keepsOperandType ? ShapeOf(instruction.Operand) : null;
@@ -1071,11 +1112,22 @@ namespace PuzzleCore.Tests.Support
         private static void Record(Dictionary<int, IReadOnlyList<TypeShape?>> recorded, int target, IReadOnlyList<TypeShape?> stack) =>
             recorded[target] = recorded.TryGetValue(target, out IReadOnlyList<TypeShape?>? earlier) ? Merge(earlier, stack) : stack;
 
-        /// <summary>The stack where two paths meet: a slot keeps its type when both agree; stacks of different depth (never in valid IL) become unknown.</summary>
+        /// <summary>The stack where two paths meet, slot by slot (<see cref="MergeSlot"/>); stacks of different depth (never in valid IL) become unknown.</summary>
         private static IReadOnlyList<TypeShape?> Merge(IReadOnlyList<TypeShape?> first, IReadOnlyList<TypeShape?> second) =>
             first.Count != second.Count
                 ? Enumerable.Repeat<TypeShape?>(null, second.Count).ToList()
-                : first.Zip(second, (one, other) => one is not null && other is not null && one.Display == other.Display ? one : null).ToList();
+                : first.Zip(second, MergeSlot).ToList();
+
+        /// <summary>One slot where two paths meet: it keeps its type when both agree, and its constant when both carry the same one.</summary>
+        private static TypeShape? MergeSlot(TypeShape? one, TypeShape? other)
+        {
+            if (one is null || other is null || one.Display != other.Display)
+            {
+                return null;
+            }
+
+            return one.Constant == other.Constant ? one : one with { Constant = null };
+        }
 
         private static int PopCount(StackBehaviour behaviour) => behaviour switch
         {

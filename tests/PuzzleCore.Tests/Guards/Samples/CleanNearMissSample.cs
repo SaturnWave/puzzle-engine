@@ -40,6 +40,22 @@ namespace PuzzleCore.Tests.Guards.Samples
         public static List<string> OrderByOrdinalComparer(IEnumerable<string> names) => names.OrderBy(name => name, StringComparer.Ordinal).ToList();
 
         public static SortedSet<string> SortedSetWithOrdinalComparer() => new SortedSet<string>(StringComparer.Ordinal);
+
+        public static bool EqualsOrdinal(string first, string second) => first.Equals(second, StringComparison.Ordinal);
+
+        public static bool StaticEqualsOrdinalIgnoreCase(string first, string second) => string.Equals(first, second, StringComparison.OrdinalIgnoreCase);
+
+        public static int CompareOrdinal(string first, string second) => string.Compare(first, second, StringComparison.Ordinal);
+
+        public static bool StartsWithOrdinalIgnoreCase(string text) => text.StartsWith("gold", StringComparison.OrdinalIgnoreCase);
+
+        public static int IndexOfLetterOrdinal(string text) => text.IndexOf('g', StringComparison.Ordinal);
+
+        public static bool SpanEqualsOrdinal(string first, string second) => first.AsSpan().Equals(second.AsSpan(), StringComparison.Ordinal);
+
+        // The same constant on both paths where control merges: the walk keeps it.
+        public static bool SameComparisonOnBothPaths(string first, string second, bool flag) =>
+            first.Equals(second, flag ? StringComparison.Ordinal : StringComparison.Ordinal);
     }
 
     /// <summary>An enum of the sample's own: its ToString prints the member's name.</summary>

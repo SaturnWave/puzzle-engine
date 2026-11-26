@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 namespace PuzzleCore.Tests.Support
@@ -24,6 +25,10 @@ namespace PuzzleCore.Tests.Support
         private const string UnstableSort = "unstable sort: equal keys may come out in a different order on Mono/IL2CPP and .NET; use OrderBy";
         private const string LinguisticOrder = "orders text by the device culture or by the platform's collation tables (ICU, NLS and Mono differ); use StringComparer.Ordinal";
         private const string NullCulture = "depends on the device culture: a null provider or culture stands for it; pass CultureInfo.InvariantCulture";
+        private const string CultureComparison = "depends on the device culture unless the comparison is StringComparison.Ordinal or OrdinalIgnoreCase, written at the call; this call passes ";
+
+        /// <summary>The only StringComparison values that compare text the same on every device: Ordinal and OrdinalIgnoreCase.</summary>
+        private static readonly int[] OrdinalComparisons = { (int)StringComparison.Ordinal, (int)StringComparison.OrdinalIgnoreCase };
 
         /// <summary>Parameter types through which a call takes the culture it formats, parses or compares by.</summary>
         private static readonly string[] CultureParameterTypes = { "System.IFormatProvider", "System.Globalization.CultureInfo" };
@@ -113,8 +118,11 @@ namespace PuzzleCore.Tests.Support
 
         /// <summary>
         /// Why the values a call passes make it depend on the device culture, whatever member it calls: null given for a
-        /// provider or a culture stands for the device culture. The bans on the overloads without a provider cannot see
-        /// it, as the overload takes one; nor can they see an optional provider left out, which C# passes as null.
+        /// provider or a culture stands for the device culture, and of the StringComparison values only a constant Ordinal
+        /// or OrdinalIgnoreCase compares text the same on every device. The bans on the overloads without a provider or a
+        /// comparison cannot see either, as the overload takes one; nor can they see an optional provider left out, which
+        /// C# passes as null. A comparison the walk cannot read (a parameter, a local, a field, two constants that meet at
+        /// a branch) is refused, as it may be any value.
         /// </summary>
         private static IEnumerable<string> CultureDependentArguments(MemberUse use)
         {
@@ -124,6 +132,27 @@ namespace PuzzleCore.Tests.Support
             {
                 yield return NullCulture;
             }
+
+            IEnumerable<int?> comparisons = PassedValues(use)
+                .Where(passed => passed.Parameter.DefinitionName == "System.StringComparison")
+                .Select(passed => passed.Argument?.Constant);
+            foreach (int? comparison in comparisons.Where(comparison => comparison is not int value || !OrdinalComparisons.Contains(value)))
+            {
+                yield return CultureComparison + DescribeComparison(comparison);
+            }
+        }
+
+        /// <summary>A StringComparison as a call passes it, for a reason: its member's name, a number outside the enum, or a value the scan cannot read.</summary>
+        private static string DescribeComparison(int? comparison)
+        {
+            if (comparison is not int value)
+            {
+                return "a value the scan cannot read";
+            }
+
+            return Enum.GetName((StringComparison)value) is string name
+                ? "StringComparison." + name
+                : "the number " + value.ToString(CultureInfo.InvariantCulture);
         }
 
         /// <summary>Each parameter of a call with what the walk knows of the value passed to it; for a field or token use, nothing.</summary>
