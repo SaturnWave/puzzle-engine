@@ -101,6 +101,9 @@ namespace PuzzleCore.Tests.Guards.Samples
 
         public static bool ComparisonOneThousand(string first, string second) => first.Equals(second, (StringComparison)1000);
 
+        // ldc.i4.s takes a signed byte.
+        public static bool ComparisonMinusOneHundred(string first, string second) => first.Equals(second, (StringComparison)(-100));
+
         // BinarySearch over text without a comparer, or with null for one: by the device culture. An array's non-generic
         // overload compares objects, which compares text so.
         public static int ArrayBinarySearchOfObjects(Array names) => Array.BinarySearch(names, "gold");
@@ -119,6 +122,8 @@ namespace PuzzleCore.Tests.Guards.Samples
         }
 
         public static int CompareThroughUnknownComparable(IComparable comparable, string text) => comparable.CompareTo(text);
+
+        public static int CompareElementOfComparables(IComparable[] comparables, string text) => comparables[0].CompareTo(text);
     }
 
     /// <summary>A generic type whose own parameter (!0) is the receiver, as in an Option&lt;T&gt;.ToString.</summary>

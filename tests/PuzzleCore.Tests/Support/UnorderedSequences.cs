@@ -6,14 +6,17 @@ namespace PuzzleCore.Tests.Support
 {
     /// <summary>
     /// Enumeration in hash order that the per-member bans of <see cref="UnityBoundApiPolicy"/> cannot see, because it goes
-    /// through an interface or a LINQ method (CLAUDE.md: "Dictionary/HashSet üzerinde gezinilmez"). Three shapes, judged on
-    /// the static types the IL walk of <see cref="AssemblyInspection"/> knows for a call's receiver and arguments:
-    /// a dictionary, set or key collection handed to a parameter that enumerates it (hashSet.ToList(),
-    /// string.Join(",", hashSet), list.AddRange(dictionary.Keys…)); a dictionary or set interface enumerated as a sequence
-    /// (foreach over an IReadOnlyDictionary); and key-value pairs enumerated from a source not known to be ordered
-    /// (foreach or LINQ over an IEnumerable&lt;KeyValuePair&lt;K, V&gt;&gt;). Members whose result does not depend on the
-    /// order they see the elements in (Count, Any, Contains, set operations, building another set or dictionary) and the
-    /// sorts that put them in order (OrderBy) stay allowed: sorting is how CLAUDE.md asks for an explicit order.
+    /// through an interface or a LINQ method (docs/shared-design.md, §3: never iterate a Dictionary or HashSet where the
+    /// order affects output). Three shapes, judged on the static types the IL walk of <see cref="AssemblyInspection"/>
+    /// knows for a call's receiver and arguments: a dictionary, set or key collection handed to a parameter that
+    /// enumerates it (hashSet.ToList(), string.Join(",", hashSet), list.AddRange(dictionary.Keys…)); a dictionary or set
+    /// behind an interface that enumerates or copies it (foreach over an IReadOnlyDictionary, ICollection&lt;T&gt;.CopyTo on a
+    /// set); and key-value pairs enumerated from a source not known to be ordered (foreach or LINQ over an
+    /// IEnumerable&lt;KeyValuePair&lt;K, V&gt;&gt;). Members whose result does not depend on the order they see the elements
+    /// in (Count, Any, Contains, set operations, building another set or dictionary) and the sorts that put them in order
+    /// (OrderBy) stay allowed: sorting is how the shared design asks for an explicit order. A set handed on through a
+    /// helper's return value or an interface-typed local is no longer seen as one (the remarks of
+    /// <see cref="UnityBoundApiPolicy"/> list it as a known gap).
     /// </summary>
     internal static class UnorderedSequences
     {

@@ -6,16 +6,38 @@ using System.Linq;
 namespace PuzzleCore.Tests.Support
 {
     /// <summary>
-    /// The platform APIs that the Unity-bound engine assemblies may use (CLAUDE.md,
-    /// "Belirleyicilik kuralları"). It is an ALLOWLIST: a type that is not listed is
-    /// rejected, so a new way to read the clock, draw randomness, depend on the device
-    /// culture, platform or time zone, or do floating-point math cannot slip in unnoticed.
-    /// Within allowed types, member bans remove the culture-, platform- and
-    /// process-dependent members. Adding a type or lifting a ban is a reviewed change
-    /// with a reason in the comment next to it.
-    /// Members the compiler synthesizes for records (ToString, PrintMembers, Equals,
-    /// GetHashCode...) are exempt: their output is never used for results (CLAUDE.md).
+    /// The platform APIs that the Unity-bound engine assemblies may use, so that the same actions give the same results
+    /// on every device and on .NET, Mono and IL2CPP alike (docs/shared-design.md, §3). It is an ALLOWLIST: a type that is
+    /// not listed is rejected, so a new way to read the clock, draw randomness, depend on the device culture, platform or
+    /// time zone, or do floating-point math cannot slip in unnoticed. Within allowed types, member bans remove the
+    /// culture-, platform- and process-dependent members they name, and rules over every call refuse the values that make
+    /// a call depend on the device culture (a null provider, culture or comparer; a StringComparison other than a constant
+    /// Ordinal or OrdinalIgnoreCase). The remarks list the uses they do not see. Adding a type or lifting a ban is a
+    /// reviewed change with a reason in the comment next to it. Members the compiler synthesizes for records (ToString,
+    /// PrintMembers, Equals, GetHashCode...) are exempt, on the rule that no result is ever built from their output.
     /// </summary>
+    /// <remarks>
+    /// Known gaps. Each of these passes this policy and <see cref="MemberBansPolicy"/>, and the guard tests plant each one
+    /// (Guards/Samples/KnownGapSamples.cs), so a change that closes one shows there:
+    /// <list type="bullet">
+    /// <item><description>A dictionary or set handed on as an IEnumerable&lt;T&gt; through a helper's return value or an
+    /// interface-typed local. What the IL walk knows of a value ends at a call it does not follow and at a local (see
+    /// <see cref="AssemblyInspection"/>); closing this needs tracking across methods.</description></item>
+    /// <item><description>For the same reason, other values stored in a local first: an integer boxed into an object
+    /// local before its ToString, or a null provider kept in a local. A StringComparison kept in a local is refused all
+    /// the same, as a value the walk cannot read.</description></item>
+    /// <item><description>A receiver the walk does not know, such as an element of an object array, which may be a boxed
+    /// integer: an unknown receiver of Object.ToString counts as none.</description></item>
+    /// <item><description>A StringComparison or a provider passed through a delegate (Func&lt;string, StringComparison,
+    /// bool&gt;.Invoke), whose parameter is a generic placeholder.</description></item>
+    /// <item><description>An enum value outside the enum's members: its ToString prints the number, a negative one with
+    /// the device culture's minus sign.</description></item>
+    /// </list>
+    /// <see cref="MemberBansPolicy"/> lets more through, as it refuses no type: number text and text order through the
+    /// members of types this allowlist leaves out, which the bans do not name. For example Convert.ToString(int),
+    /// TextWriter.Write(int), double.ToString(), string.Create(null, $"…") (the interpolation handler keeps the provider
+    /// in a local) and enumerating a ConcurrentDictionary through its own GetEnumerator.
+    /// </remarks>
     internal sealed class UnityBoundApiPolicy : IPlatformApiPolicy
     {
         private const string Culture = "depends on the device culture; pass CultureInfo.InvariantCulture or use an ordinal overload";
@@ -345,8 +367,9 @@ namespace PuzzleCore.Tests.Support
 
             // BinarySearch without a comparer searches by the default comparer, which compares text by the device culture:
             // on lists, arrays, spans and the immutable collections, as the sorts below. An array's non-generic overloads
-            // compare objects, which compares text so; a span's overloads that take a comparable, not a comparer, search
-            // with its CompareTo (the last type argument), and a string's compares by the device culture.
+            // compare objects, which compares text so. A span's BinarySearch searches with its last type argument: either
+            // the comparable it is given (TComparable, or T for the overload that takes an IComparable<T>), and a string
+            // compares by the device culture, or the comparer, which is never text.
             foreach (string list in new[] { "System.Collections.Generic.List`1", "System.Collections.Immutable.ImmutableList`1", "System.Collections.Immutable.ImmutableList`1+Builder" })
             {
                 bans.Add(new MemberBan(list, "BinarySearch", use => !TakesComparer(use) && OrdersText(TypeArgument(use.DeclaringType, 0)), LinguisticOrder));
@@ -359,7 +382,7 @@ namespace PuzzleCore.Tests.Support
             }
 
             bans.Add(new MemberBan("System.MemoryExtensions", "BinarySearch",
-                use => use.Parameters.Count == 2 && use.MethodTypeArguments.Count > 0 && OrdersText(use.MethodTypeArguments[^1]), LinguisticOrder));
+                use => use.MethodTypeArguments.Count > 0 && OrdersText(use.MethodTypeArguments[^1]), LinguisticOrder));
 
             // CompareTo through IComparable<T> or IComparable compares as the value's own CompareTo does, a string's by the
             // device culture. The untyped interface hides what it compares, so only a receiver the walk knows is no text

@@ -116,9 +116,11 @@ namespace PuzzleCore.Tests.Support
     internal sealed record DeclaredTypeUse(string DeclaringType, string ExternalType);
 
     /// <summary>
-    /// Reads a compiled assembly's metadata and IL without loading it, to prove rules the
-    /// compiler cannot enforce. Everything is checked on the compiled output, so a rule
-    /// cannot be dodged with <c>var</c>, generics or a helper method.
+    /// Reads a compiled assembly's metadata and IL without loading it, to prove rules the compiler cannot enforce.
+    /// Everything is checked on the compiled output, so <c>var</c> hides nothing, and a helper method hides no call it
+    /// makes: every method body is scanned, whoever calls it. What a rule sees of a value, though, is what the IL walk
+    /// knows of it (see Flow), so a value handed on through a helper's return value or a local can escape a rule that
+    /// judges values (the remarks of <see cref="UnityBoundApiPolicy"/> list the known gaps).
     /// </summary>
     internal sealed class AssemblyInspection : IDisposable
     {
@@ -362,9 +364,10 @@ namespace PuzzleCore.Tests.Support
 
         /// <summary>
         /// Checks every platform API the assembly touches against a policy: the Unity-bound
-        /// allowlist and its member bans, or the generator content policy. Types of the
+        /// allowlist and its member bans, or the member bans alone. Types of the
         /// Unity-bound sibling assemblies (PuzzleCore.Jam using PuzzleCore) are not platform APIs:
-        /// those assemblies are scanned on their own.
+        /// those assemblies are scanned on their own. Native-sized integers and native calls
+        /// are refused under every policy.
         /// </summary>
         public IReadOnlyList<Violation> ApiPolicyViolations(IPlatformApiPolicy policy)
         {
@@ -1238,7 +1241,7 @@ namespace PuzzleCore.Tests.Support
     /// <summary>The calling method, needed by bans that exempt GetHashCode overrides and record members the compiler writes.</summary>
     internal sealed record CallerContext(string MethodName, bool IsSynthesizedRecordMember, bool IsIteratorPlumbing);
 
-    /// <summary>Which platform types and members an assembly may use: <see cref="UnityBoundApiPolicy"/> or <see cref="GeneratorContentPolicy"/>.</summary>
+    /// <summary>Which platform types and members an assembly may use: <see cref="UnityBoundApiPolicy"/> or <see cref="MemberBansPolicy"/>.</summary>
     internal interface IPlatformApiPolicy
     {
         /// <summary>Completes "type …" and "uses T, which …" for a refused type, for example "is not on the Unity-bound allowlist".</summary>

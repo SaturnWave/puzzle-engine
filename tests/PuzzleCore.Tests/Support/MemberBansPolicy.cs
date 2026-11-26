@@ -4,9 +4,15 @@ namespace PuzzleCore.Tests.Support
 {
     /// <summary>
     /// The member bans of <see cref="UnityBoundApiPolicy"/> alone, with every platform type allowed: for net10.0 code whose
-    /// output is compared byte for byte across machines but which may use files, threads and the clock, such as
-    /// offline tools whose text output is compared byte for byte. Refused: culture-dependent text and text order (an
-    /// interpolated integer included), the platform newline, randomized hashing, enumeration in hash order and unstable sorts.
+    /// output is compared byte for byte across machines but which may use files, threads and the clock, such as Gen's.
+    /// Refused: the members the bans name for culture-dependent text and text order (an interpolated integer and an
+    /// integer formatted through Object.ToString included), the platform newline, randomized hashing, thread identity,
+    /// enumeration in hash order and unstable sorts; a null provider, culture or comparer and a StringComparison other
+    /// than a constant Ordinal or OrdinalIgnoreCase, given to any member; and the hash-order rules of
+    /// <see cref="UnorderedSequences"/>. The scan refuses native-sized integers and native calls under every policy.
+    /// This policy refuses no type, so randomness, the clock and floating point pass it, and so do the members of types
+    /// the allowlist leaves out that format numbers or order text by the device culture (see the remarks of
+    /// <see cref="UnityBoundApiPolicy"/>).
     /// </summary>
     internal sealed class MemberBansPolicy : IPlatformApiPolicy
     {

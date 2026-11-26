@@ -15,9 +15,10 @@ namespace PuzzleCore.Tests.Guards
     /// threads, reflection, native calls), culture-dependent text, randomized hashing, unordered enumeration and unstable
     /// sorts. The bans do not see every way to that behaviour: the policy's remarks list the known gaps.
     /// The self-tests prove that the scanners report each planted violation at its member, among them a planted use of
-    /// every member ban and a planted break of every member limit of the allowlist; that they stay silent on the clean
-    /// samples, whose declared types the allowlist all allows; and that the member bans alone
-    /// (<see cref="MemberBansPolicy"/>) report the planted bans but refuse no type. Ported from the Block engine.
+    /// every member ban, each planted gap the policy let through before and a planted break of every member limit of the
+    /// allowlist; that they stay silent on the clean samples, the near misses of the gaps among them, whose declared types
+    /// the allowlist all allows; that the member bans alone (<see cref="MemberBansPolicy"/>) report the planted bans but
+    /// refuse no type; and that each known gap the policy's remarks list still passes. Ported from the Block engine.
     /// </summary>
     public sealed class DeterminismGuardTests
     {
@@ -25,15 +26,15 @@ namespace PuzzleCore.Tests.Guards
 
         private const string Culture = "depends on the device culture";
         private const string NullCulture = "a null provider or culture stands for it";
-
-        /// <summary>Begins the reason of a StringComparison the rule refuses; the value the call passes follows.</summary>
-        private const string Passes = "unless the comparison is StringComparison.Ordinal or OrdinalIgnoreCase, written at the call; this call passes ";
         private const string TextOrder = "orders text by the device culture";
         private const string RandomizedHash = "hash codes are randomized per process";
         private const string HashOrder = "enumeration order is an implementation detail";
         private const string UnstableSort = "unstable sort";
         private const string ThreadIdentity = "thread identity must not influence results";
         private const string Newline = "Environment.NewLine differs";
+
+        /// <summary>Begins the reason of a StringComparison the rule refuses; the value the call passes follows.</summary>
+        private const string Passes = "unless the comparison is StringComparison.Ordinal or OrdinalIgnoreCase, written at the call; this call passes ";
 
         /// <summary>
         /// Code that keeps every rule these scans check: realistic integer-only code, records whose compiler-written members
@@ -54,7 +55,8 @@ namespace PuzzleCore.Tests.Guards
         /// <summary>
         /// The planted violations of Guards/Samples/PolicyEdgeSamples.cs that both policies report: a set whose type the
         /// walk learns from one kind of instruction each, each hash-ordered type and sequence parameter type, the receiver
-        /// and LINQ-over-pairs rules, and hand-written members that carry the names of the members the compiler writes.
+        /// and LINQ-over-pairs rules, two comparison constants that meet at a branch, and hand-written members that carry
+        /// the names of the members the compiler writes.
         /// </summary>
         public static TheoryData<string, string> PlantedEdgeViolations => new()
         {
@@ -130,12 +132,14 @@ namespace PuzzleCore.Tests.Guards
             { "PolicyGapSamples::ComparisonEight", "System.String::Equals", Passes + "the number 8" },
             { "PolicyGapSamples::ComparisonOneHundred", "System.String::Equals", Passes + "the number 100" },
             { "PolicyGapSamples::ComparisonOneThousand", "System.String::Equals", Passes + "the number 1000" },
+            { "PolicyGapSamples::ComparisonMinusOneHundred", "System.String::Equals", Passes + "the number -100" },
             { "PolicyGapSamples::ArrayBinarySearchOfObjects", "System.Array::BinarySearch", TextOrder },
             { "PolicyGapSamples::ArrayBinarySearchNullComparer", "System.Array::BinarySearch", TextOrder },
             { "PolicyGapSamples::ListBinarySearchNullComparer", "System.Collections.Generic.List`1::BinarySearch", TextOrder },
             { "PolicyGapSamples::SpanBinarySearchComparable", "System.MemoryExtensions::BinarySearch", TextOrder },
             { "PolicyGapSamples::CompareThroughGenericInterfaceLocal", "System.IComparable`1::CompareTo", TextOrder },
             { "PolicyGapSamples::CompareThroughUnknownComparable", "System.IComparable::CompareTo", TextOrder },
+            { "PolicyGapSamples::CompareElementOfComparables", "System.IComparable::CompareTo", TextOrder },
         };
 
         /// <summary>
@@ -458,6 +462,12 @@ namespace PuzzleCore.Tests.Guards
         [InlineData("PolicyEdgeSamples::LastHash")]
         [InlineData("PolicyEdgeSamples::HoldsReferences")]
         [InlineData("PolicyEdgeSamples::CountOfTimes")]
+        // Known gaps of the member bans alone (the policy's remarks): only the allowlist keeps these out.
+        [InlineData("KnownGapSamples::NumberTextThroughConvert")]
+        [InlineData("KnownGapSamples::NumberTextThroughWriter")]
+        [InlineData("KnownGapSamples::FloatingPointText")]
+        [InlineData("KnownGapSamples::NullProviderOfInterpolation")]
+        [InlineData("KnownGapSamples::ConcurrentDictionaryOrder")]
         public void The_member_bans_alone_pass_a_method_that_the_allowlist_refuses(string member)
         {
             string at = Samples + member;
@@ -469,6 +479,48 @@ namespace PuzzleCore.Tests.Guards
             Assert.True(refused.All(violation => IsRefusal(violation, UnityBoundApiPolicy.Default)),
                 Report("The Unity-bound policy reports more than an allowlist refusal at " + at, refused));
             Assert.True(banned.Count == 0, Report("The member bans alone report " + at + ", which only the allowlist refuses", banned));
+        }
+
+        /// <summary>
+        /// The known gaps that the policy's remarks list and both policies let through, each planted: a change that closes
+        /// one fails here, and the remarks and this list change with it.
+        /// </summary>
+        [Theory]
+        [InlineData("KnownGapSamples::SetHandedOnThroughLocal")]
+        [InlineData("KnownGapSamples::SetHandedOnThroughHelper")]
+        [InlineData("KnownGapSamples::NumberBoxedIntoLocal")]
+        [InlineData("KnownGapSamples::NullProviderInLocal")]
+        [InlineData("KnownGapSamples::NumberInAnObjectArray")]
+        [InlineData("KnownGapSamples::ComparisonThroughDelegate")]
+        [InlineData("KnownGapSamples::EnumValueOutsideItsMembers")]
+        public void The_known_gaps_in_the_policy_remarks_pass_both_policies(string member)
+        {
+            string at = Samples + member;
+
+            IReadOnlyList<Violation> reported = Scans.Value.UnityBound.Concat(Scans.Value.MemberBans).Where(violation => IsAt(violation, at)).ToList();
+
+            Assert.True(Scans.Value.MemberReferences.Any(site => site.CallerType + "::" + site.CallerMethod == at), "No member use was read in " + at + ".");
+            Assert.True(reported.Count == 0, Report("The scans report " + at + ", a known gap: update the policy's remarks and this list", reported));
+        }
+
+        [Fact]
+        public void The_member_bans_alone_pass_their_near_misses_outside_the_allowlist()
+        {
+            const string Sample = Samples + "MemberBansNearMissSample";
+
+            IReadOnlyList<Violation> banned = Scans.Value.MemberBans.Where(violation => IsIn(violation.Location, Sample)).ToList();
+
+            Assert.Contains(Scans.Value.MemberReferences, site => IsInType(site.CallerType, Sample));
+            Assert.True(banned.Count == 0, Report("The member bans alone report their near misses", banned));
+        }
+
+        [Fact]
+        public void A_field_use_is_named_without_a_parameter_list()
+        {
+            const string Member = Samples + "MemberBanSamples::NonGenericDefaultComparer";
+
+            Assert.Contains(Scans.Value.MemberBans, violation => IsAt(violation, Member)
+                && violation.Reason.StartsWith("System.Collections.Comparer::Default: ", StringComparison.Ordinal));
         }
 
         [Fact]
