@@ -33,8 +33,8 @@ namespace PuzzleCore.Tests.Support
         /// <summary>Parameter types through which a call takes the culture it formats, parses or compares by.</summary>
         private static readonly string[] CultureParameterTypes = { "System.IFormatProvider", "System.Globalization.CultureInfo" };
 
-        /// <summary>Parameter types through which a call takes the comparer it orders by.</summary>
-        private static readonly string[] ComparerParameterTypes = { "System.Collections.Generic.IComparer`1" };
+        /// <summary>Parameter types through which a call takes the comparer it orders by (an array's non-generic overloads take the untyped one).</summary>
+        private static readonly string[] ComparerParameterTypes = { "System.Collections.Generic.IComparer`1", "System.Collections.IComparer" };
 
         private static readonly string[] IntegerTypes =
         {
@@ -343,6 +343,30 @@ namespace PuzzleCore.Tests.Support
                 bans.Add(new MemberBan("System.Linq.Enumerable", ordering, use => !TakesComparer(use) && OrdersText(SortKey(use)), LinguisticOrder));
             }
 
+            // BinarySearch without a comparer searches by the default comparer, which compares text by the device culture:
+            // on lists, arrays, spans and the immutable collections, as the sorts below. An array's non-generic overloads
+            // compare objects, which compares text so; a span's overloads that take a comparable, not a comparer, search
+            // with its CompareTo (the last type argument), and a string's compares by the device culture.
+            foreach (string list in new[] { "System.Collections.Generic.List`1", "System.Collections.Immutable.ImmutableList`1", "System.Collections.Immutable.ImmutableList`1+Builder" })
+            {
+                bans.Add(new MemberBan(list, "BinarySearch", use => !TakesComparer(use) && OrdersText(TypeArgument(use.DeclaringType, 0)), LinguisticOrder));
+            }
+
+            foreach (string array in new[] { "System.Array", "System.Collections.Immutable.ImmutableArray" })
+            {
+                bans.Add(new MemberBan(array, "BinarySearch",
+                    use => !TakesComparer(use) && (use.MethodTypeArguments.Count == 0 || OrdersText(use.MethodTypeArguments[0])), LinguisticOrder));
+            }
+
+            bans.Add(new MemberBan("System.MemoryExtensions", "BinarySearch",
+                use => use.Parameters.Count == 2 && use.MethodTypeArguments.Count > 0 && OrdersText(use.MethodTypeArguments[^1]), LinguisticOrder));
+
+            // CompareTo through IComparable<T> or IComparable compares as the value's own CompareTo does, a string's by the
+            // device culture. The untyped interface hides what it compares, so only a receiver the walk knows is no text
+            // (a boxed int) passes it.
+            bans.Add(new MemberBan("System.IComparable`1", "CompareTo", use => OrdersText(TypeArgument(use.DeclaringType, 0)), LinguisticOrder));
+            bans.Add(new MemberBan("System.IComparable", "CompareTo", use => MayCompareText(use.Instance), LinguisticOrder));
+
             foreach (string type in new[]
             {
                 "System.Object", "System.ValueType", "System.String", "System.StringComparer",
@@ -360,8 +384,16 @@ namespace PuzzleCore.Tests.Support
             bans.Add(new MemberBan("System.Collections.Generic.Dictionary`2", "get_Keys", _ => true, UnorderedEnumeration));
             bans.Add(new MemberBan("System.Collections.Generic.Dictionary`2", "get_Values", _ => true, UnorderedEnumeration));
             bans.Add(new MemberBan("System.Collections.Generic.HashSet`1", "GetEnumerator", _ => true, UnorderedEnumeration));
+            // CopyTo copies a set's or a dictionary view's elements in the order enumerating them gives.
+            bans.Add(new MemberBan("System.Collections.Generic.HashSet`1", "CopyTo", _ => true, UnorderedEnumeration));
+            foreach (string view in new[] { "System.Collections.Generic.Dictionary`2+KeyCollection", "System.Collections.Generic.Dictionary`2+ValueCollection" })
+            {
+                bans.Add(new MemberBan(view, "GetEnumerator", _ => true, UnorderedEnumeration));
+                bans.Add(new MemberBan(view, "CopyTo", _ => true, UnorderedEnumeration));
+            }
+
             // Through an interface the dictionary behind it is unknown, and most are hash tables. Enumerating one as a
-            // sequence (foreach, LINQ) is UnorderedSequences' part.
+            // sequence (foreach, LINQ) or copying it out (ICollection<T>.CopyTo) is UnorderedSequences' part.
             foreach (string view in new[] { "System.Collections.Generic.IReadOnlyDictionary`2", "System.Collections.Generic.IDictionary`2" })
             {
                 bans.Add(new MemberBan(view, "get_Keys", _ => true, UnorderedEnumeration));
@@ -430,6 +462,14 @@ namespace PuzzleCore.Tests.Support
             key is not null
             && (key.DefinitionName is "System.String" or "System.Object"
                 || (IsTupleLike(key.DefinitionName) && key.TypeArguments.Any(argument => OrdersText(argument))));
+
+        /// <summary>
+        /// Whether a receiver of IComparable.CompareTo may compare text: text as <see cref="OrdersText"/> has it, the
+        /// interface itself (which a string may be), or a value the walk does not know. A generic parameter counts as no
+        /// text, as everywhere else.
+        /// </summary>
+        private static bool MayCompareText(TypeShape? receiver) =>
+            receiver is null || OrdersText(receiver) || receiver.DefinitionName == "System.IComparable";
 
         private static bool IsTupleLike(string definitionName) =>
             definitionName.StartsWith("System.ValueTuple`", StringComparison.Ordinal) || definitionName.StartsWith("System.Tuple`", StringComparison.Ordinal)

@@ -56,6 +56,29 @@ namespace PuzzleCore.Tests.Guards.Samples
         // The same constant on both paths where control merges: the walk keeps it.
         public static bool SameComparisonOnBothPaths(string first, string second, bool flag) =>
             first.Equals(second, flag ? StringComparison.Ordinal : StringComparison.Ordinal);
+
+        public static int ListBinarySearchOfNumbers(List<int> values) => values.BinarySearch(5);
+
+        public static int ListBinarySearchOrdinal(List<string> names) => names.BinarySearch("gold", StringComparer.Ordinal);
+
+        public static int ArrayBinarySearchOfNumbers(int[] values) => Array.BinarySearch(values, 5);
+
+        public static int ArrayBinarySearchOrdinal(string[] names) => Array.BinarySearch(names, "gold", StringComparer.Ordinal);
+
+        public static int SpanBinarySearchOfNumbers(int[] values) => values.AsSpan().BinarySearch(5);
+
+        public static int SpanBinarySearchOrdinal(string[] names) => names.AsSpan().BinarySearch("gold", StringComparer.Ordinal);
+
+        public static int CompareNumbersThroughInterface(int first, int second) => ((IComparable<int>)first).CompareTo(second);
+
+        public static int CompareBoxedNumber(int first, int second) => ((IComparable)first).CompareTo(second);
+
+        public static int[] SortedSetCopyTo(SortedSet<int> values)
+        {
+            var copy = new int[values.Count];
+            values.CopyTo(copy);
+            return copy;
+        }
     }
 
     /// <summary>An enum of the sample's own: its ToString prints the member's name.</summary>

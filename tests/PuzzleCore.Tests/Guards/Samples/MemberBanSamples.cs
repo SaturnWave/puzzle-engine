@@ -163,6 +163,22 @@ namespace PuzzleCore.Tests.Guards.Samples
 
         public static (string Name, int Rank) MaxByText(IEnumerable<(string Name, int Rank)> entries) => entries.MaxBy(entry => entry.Name);
 
+        public static int ListBinarySearchText(List<string> names) => names.BinarySearch("gold");
+
+        public static int ArrayBinarySearchText(string[] names) => Array.BinarySearch(names, "gold");
+
+        public static int SpanBinarySearchText(string[] names) => names.AsSpan().BinarySearch("gold");
+
+        public static int ImmutableArrayBinarySearchText(ImmutableArray<string> names) => names.BinarySearch("gold");
+
+        public static int ImmutableListBinarySearchText(ImmutableList<string> names) => names.BinarySearch("gold");
+
+        public static int ImmutableListBuilderBinarySearchText(ImmutableList<string>.Builder names) => names.BinarySearch("gold");
+
+        public static int ComparableCompareTo(string first, string second) => ((IComparable)first).CompareTo(second);
+
+        public static int GenericComparableCompareTo(string first, string second) => ((IComparable<string>)first).CompareTo(second);
+
         // Hash codes, which are randomized per process.
         public static int ObjectGetHashCode(object value) => value.GetHashCode();
 
@@ -196,6 +212,49 @@ namespace PuzzleCore.Tests.Guards.Samples
         public static int DictionaryValues(Dictionary<int, int> table) => table.Values.Count;
 
         public static int HashSetGetEnumerator(HashSet<int> values)
+        {
+            int sum = 0;
+            foreach (int value in values)
+            {
+                sum += value;
+            }
+
+            return sum;
+        }
+
+        public static int[] HashSetCopyTo(HashSet<int> values)
+        {
+            var copy = new int[values.Count];
+            values.CopyTo(copy);
+            return copy;
+        }
+
+        public static string[] KeyCollectionCopyTo(Dictionary<string, int>.KeyCollection keys)
+        {
+            var copy = new string[keys.Count];
+            keys.CopyTo(copy, 0);
+            return copy;
+        }
+
+        public static int KeyCollectionGetEnumerator(Dictionary<int, int>.KeyCollection keys)
+        {
+            int sum = 0;
+            foreach (int key in keys)
+            {
+                sum += key;
+            }
+
+            return sum;
+        }
+
+        public static int[] ValueCollectionCopyTo(Dictionary<string, int>.ValueCollection values)
+        {
+            var copy = new int[values.Count];
+            values.CopyTo(copy, 0);
+            return copy;
+        }
+
+        public static int ValueCollectionGetEnumerator(Dictionary<string, int>.ValueCollection values)
         {
             int sum = 0;
             foreach (int value in values)
