@@ -33,12 +33,13 @@ namespace PuzzleCore.Tests.Guards
 
         /// <summary>
         /// Code that keeps every rule these scans check: realistic integer-only code, records whose compiler-written members
-        /// must pass (one of them only through the record exemption), and a GetHashCode override that passes only through
-        /// the hash-code exemption.
+        /// must pass (one of them only through the record exemption), a GetHashCode override that passes only through the
+        /// hash-code exemption, and the near misses of the planted gaps.
         /// </summary>
         private static readonly string[] CleanSamples =
         {
             Samples + "CleanIntegerOnlySample", Samples + "CleanCell", Samples + "CleanNamedCell", Samples + "CleanHashedName",
+            Samples + "CleanNearMissSample",
         };
 
         /// <summary>The scans of this test assembly, made once for the whole run: the assembly cannot change while its own tests run.</summary>
@@ -82,6 +83,23 @@ namespace PuzzleCore.Tests.Guards
             { "HandWrittenMembers::.ctor", ThreadIdentity },
             { "HandWrittenMembers::ToString", Culture },
             { "HandWrittenMembers::GetHashCode", Culture },
+        };
+
+        /// <summary>
+        /// The planted gaps of Guards/Samples/PolicyGapSamples.cs, which both policies let through before: the sample
+        /// member, the member the violation names, as Type::Member without generic arguments, and a fragment of the reason.
+        /// </summary>
+        public static TheoryData<string, string, string> PlantedGaps => new()
+        {
+            { "PolicyGapSamples::BoxedNumber", "System.Object::ToString", Culture },
+            { "PolicyGapSamples::NullableNumber", "System.Object::ToString", Culture },
+            { "PolicyGapSamples::TupleOfNumbers", "System.Object::ToString", Culture },
+            { "PolicyGapSamples::PairOfNumber", "System.Object::ToString", Culture },
+            { "PolicyGapSamples::GenericValue", "System.Object::ToString", Culture },
+            { "PolicyGapSamples::GenericBoxed", "System.Object::ToString", Culture },
+            { "PolicyGapSamples::GenericConcatenated", "System.Object::ToString", Culture },
+            { "PolicyGapSamples::NumberToStringDelegate", "System.Object::ToString", Culture },
+            { "GenericHolderSample`1::Text", "System.Object::ToString", Culture },
         };
 
         /// <summary>
@@ -133,6 +151,7 @@ namespace PuzzleCore.Tests.Guards
             { "MemberBanSamples::StringBuilderAppendLine", "System.Text.StringBuilder::AppendLine", Newline },
             { "MemberBanSamples::InterpolatedString", "System.Runtime.CompilerServices.DefaultInterpolatedStringHandler::.ctor", Culture },
             { "MemberBanSamples::InterpolatedAppend", "System.Text.StringBuilder+AppendInterpolatedStringHandler::.ctor", Culture },
+            { "MemberBanSamples::ObjectToString", "System.Object::ToString", Culture },
             { "MemberBanSamples::CurrentCulture", "System.Globalization.CultureInfo::get_CurrentCulture", Culture },
             { "MemberBanSamples::CurrentUICulture", "System.Globalization.CultureInfo::get_CurrentUICulture", Culture },
             { "MemberBanSamples::CurrentCultureComparer", "System.StringComparer::get_CurrentCulture", TextOrder },
@@ -330,14 +349,14 @@ namespace PuzzleCore.Tests.Guards
         [MemberData(nameof(PlantedBans))]
         public void Each_member_ban_reports_its_planted_use_under_both_policies(string member, string bannedMember, string reasonFragment)
         {
-            string at = Samples + member;
-            bool Reports(IReadOnlyList<Violation> violations) => violations.Any(violation => IsAt(violation, at)
-                && BannedMemberOf(violation) == bannedMember && violation.Reason.Contains(reasonFragment, StringComparison.Ordinal));
+            AssertReportedUnderBothPolicies(Samples + member, bannedMember, reasonFragment);
+        }
 
-            Assert.True(Reports(Scans.Value.UnityBound),
-                "The Unity-bound policy reports no " + bannedMember + " ban ('" + reasonFragment + "') at " + at + ". " + FoundAt(at, Scans.Value.UnityBound));
-            Assert.True(Reports(Scans.Value.MemberBans),
-                "The member bans alone report no " + bannedMember + " ban ('" + reasonFragment + "') at " + at + ". " + FoundAt(at, Scans.Value.MemberBans));
+        [Theory]
+        [MemberData(nameof(PlantedGaps))]
+        public void Each_planted_gap_is_reported_under_both_policies(string member, string usedMember, string reasonFragment)
+        {
+            AssertReportedUnderBothPolicies(Samples + member, usedMember, reasonFragment);
         }
 
         [Fact]
@@ -482,6 +501,18 @@ namespace PuzzleCore.Tests.Guards
                 MemberReferences = samples.MemberReferences(),
                 DeclaredTypes = samples.DeclaredExternalTypes(),
             };
+        }
+
+        /// <summary>Asserts that both policies report, at the member, a use of <paramref name="usedMember"/> (Type::Member) for a reason containing the fragment.</summary>
+        private static void AssertReportedUnderBothPolicies(string member, string usedMember, string reasonFragment)
+        {
+            bool Reports(IReadOnlyList<Violation> violations) => violations.Any(violation => IsAt(violation, member)
+                && BannedMemberOf(violation) == usedMember && violation.Reason.Contains(reasonFragment, StringComparison.Ordinal));
+
+            Assert.True(Reports(Scans.Value.UnityBound),
+                "The Unity-bound policy reports no use of " + usedMember + " ('" + reasonFragment + "') at " + member + ". " + FoundAt(member, Scans.Value.UnityBound));
+            Assert.True(Reports(Scans.Value.MemberBans),
+                "The member bans alone report no use of " + usedMember + " ('" + reasonFragment + "') at " + member + ". " + FoundAt(member, Scans.Value.MemberBans));
         }
 
         private static void AssertReported(IReadOnlyList<Violation> violations, string member, string reasonFragment)

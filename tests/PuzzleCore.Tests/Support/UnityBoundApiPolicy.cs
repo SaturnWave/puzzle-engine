@@ -245,6 +245,12 @@ namespace PuzzleCore.Tests.Support
             bans.Add(new MemberBan("System.Globalization.CultureInfo", "get_CurrentCulture", _ => true, Culture));
             bans.Add(new MemberBan("System.Globalization.CultureInfo", "get_CurrentUICulture", _ => true, Culture));
 
+            // ToString called through System.Object names no integer type: a boxed integer, a nullable, pair or tuple that
+            // holds one, and a generic T all reach it, so the ban judges the receiver the walk knows (box and the
+            // constrained. prefix keep the value's own type). System.ValueType.ToString needs no ban: C# names it only for
+            // base.ToString() in a struct, whose receiver is that struct, and it prints the struct's type name.
+            bans.Add(new MemberBan("System.Object", "ToString", use => FormatsAnInteger(use.Instance), Culture));
+
             // Text order: only an ordinal comparison orders strings the same on every device and runtime. A comparer-less
             // sort, sorted collection or Comparer<T>.Default over text compares by the device culture.
             foreach (string comparer in new[]
@@ -355,6 +361,16 @@ namespace PuzzleCore.Tests.Support
         private static bool IsTupleLike(string definitionName) =>
             definitionName.StartsWith("System.ValueTuple`", StringComparison.Ordinal) || definitionName.StartsWith("System.Tuple`", StringComparison.Ordinal)
             || definitionName == "System.Collections.Generic.KeyValuePair`2";
+
+        /// <summary>
+        /// Whether a value's ToString formats an integer by the device culture: an integer, a generic parameter that may be
+        /// one, or a nullable, pair or tuple that holds one, whose ToString formats what it holds. An unknown value (null)
+        /// counts as none.
+        /// </summary>
+        private static bool FormatsAnInteger(TypeShape? value) =>
+            value is not null
+            && (IntegerTypes.Contains(value.DefinitionName) || value.IsGenericParameter
+                || ((value.DefinitionName == "System.Nullable`1" || IsTupleLike(value.DefinitionName)) && value.TypeArguments.Any(argument => FormatsAnInteger(argument))));
 
         private abstract record TypeRule(string TypeName);
 

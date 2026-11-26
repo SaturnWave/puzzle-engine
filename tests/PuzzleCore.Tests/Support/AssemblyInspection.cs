@@ -40,6 +40,9 @@ namespace PuzzleCore.Tests.Support
             bool isPlaceholder = Display.StartsWith(prefix, StringComparison.Ordinal) && (ofMethod || !Display.StartsWith("!!", StringComparison.Ordinal));
             return isPlaceholder && int.TryParse(Display.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out int index) ? index : null;
         }
+
+        /// <summary>Whether this is a generic parameter placeholder, the declaring type's (!n) or the method's (!!n), which any type may fill.</summary>
+        public bool IsGenericParameter => PlaceholderIndex(ofMethod: true) is not null || PlaceholderIndex(ofMethod: false) is not null;
     }
 
     /// <summary>
@@ -839,17 +842,30 @@ namespace PuzzleCore.Tests.Support
             public ImmutableArray<int> Targets { get; init; }
         }
 
-        /// <summary>One instruction with the static types of the receiver and arguments it takes, when it is a call, callvirt or newobj.</summary>
+        /// <summary>
+        /// One instruction with the static types of the receiver and arguments it takes, when it is a call, callvirt or
+        /// newobj, or of the object a delegate will call, when it is an ldvirtftn.
+        /// </summary>
         private readonly record struct FlowStep(Instruction Instruction, TypeShape? Instance, IReadOnlyList<TypeShape?> Arguments);
+
+        /// <summary>The declared types of a method's arguments (this first, for an instance method) and of its locals.</summary>
+        private sealed record VariableTypes
+        {
+            public required IReadOnlyList<TypeShape> Arguments { get; init; }
+
+            public required IReadOnlyList<TypeShape> Locals { get; init; }
+        }
 
         /// <summary>
         /// Every instruction of the method in order, each call, callvirt and newobj with the static types of the values it
-        /// takes. One forward walk tracks the evaluation stack: a value loaded from an argument, a local or a field, returned
-        /// by a call, made by newobj or cast keeps its declared type; every other value is unknown (null). Where control
-        /// merges, a slot keeps its type only when every path that reached it so far agrees. After an unconditional jump the
-        /// walk resumes with the stack a forward branch recorded for the target, else with an empty stack (C# leaves the stack
-        /// empty at statement boundaries such as loop heads). A value stored into a local of another type loses its own
-        /// type, so the checks built on this see a value only where it is passed straight on.
+        /// takes, and each ldvirtftn with the object it takes. One forward walk tracks the evaluation stack: a value loaded
+        /// from an argument, a local or a field, returned by a call, made by newobj or cast keeps its declared type; box
+        /// keeps the type of the value it boxes; a callvirt after the constrained. prefix takes a receiver of the prefix's
+        /// type; every other value is unknown (null). Where control merges, a slot keeps its type only when every path that
+        /// reached it so far agrees. After an unconditional jump the walk resumes with the stack a forward branch recorded
+        /// for the target, else with an empty stack (C# leaves the stack empty at statement boundaries such as loop heads).
+        /// A value stored into a local of another type loses its own type, so the checks built on this see a value only
+        /// where it is passed straight on.
         /// </summary>
         private IEnumerable<FlowStep> Flow(MethodDefinitionHandle methodHandle)
         {
@@ -861,10 +877,13 @@ namespace PuzzleCore.Tests.Support
 
             MethodBodyBlock body = _peReader.GetMethodBody(method.RelativeVirtualAddress);
             MethodSignature<TypeShape> signature = method.DecodeSignature(_shapes, null);
-            IReadOnlyList<TypeShape> arguments = signature.Header.IsInstance
-                ? signature.ParameterTypes.Prepend(ShapeOfDefinition(method.GetDeclaringType())).ToList()
-                : signature.ParameterTypes;
-            IReadOnlyList<TypeShape> locals = LocalTypes(methodHandle).ToList();
+            var variables = new VariableTypes
+            {
+                Arguments = signature.Header.IsInstance
+                    ? signature.ParameterTypes.Prepend(ShapeOfDefinition(method.GetDeclaringType())).ToList()
+                    : signature.ParameterTypes,
+                Locals = LocalTypes(methodHandle).ToList(),
+            };
             var recorded = new Dictionary<int, IReadOnlyList<TypeShape?>>();
             foreach (ExceptionRegion region in body.ExceptionRegions)
             {
@@ -880,6 +899,7 @@ namespace PuzzleCore.Tests.Support
 
             var stack = new List<TypeShape?>();
             bool fallsThrough = true;
+            TypeShape? constraint = null;
             byte[] il = body.GetILBytes() ?? Array.Empty<byte>();
             foreach (Instruction instruction in DecodeInstructions(il, 0, il.Length, Describe(methodHandle)))
             {
@@ -892,7 +912,11 @@ namespace PuzzleCore.Tests.Support
                     stack.Clear();
                 }
 
-                yield return Step(instruction, stack, arguments, locals);
+                yield return Step(instruction, stack, variables, constraint);
+
+                // constrained. T comes right before a callvirt, whose receiver it gives: a reference to a T, which a type
+                // parameter or a value type such as Nullable<int> fills.
+                constraint = instruction.OpCode == OpCodes.Constrained ? ShapeOf(instruction.Operand) : null;
 
                 bool isLeave = instruction.OpCode == OpCodes.Leave || instruction.OpCode == OpCodes.Leave_S;
                 foreach (int target in instruction.Targets)
@@ -904,8 +928,11 @@ namespace PuzzleCore.Tests.Support
             }
         }
 
-        /// <summary>Applies one instruction to the stack and returns what a call, callvirt or newobj took from it.</summary>
-        private FlowStep Step(Instruction instruction, List<TypeShape?> stack, IReadOnlyList<TypeShape> arguments, IReadOnlyList<TypeShape> locals)
+        /// <summary>
+        /// Applies one instruction to the stack and returns what a call, callvirt or newobj took from it, or the object an
+        /// ldvirtftn took. <paramref name="constraint"/> is the type a constrained. prefix named right before the instruction.
+        /// </summary>
+        private FlowStep Step(Instruction instruction, List<TypeShape?> stack, VariableTypes variables, TypeShape? constraint)
         {
             OpCode opCode = instruction.OpCode;
             bool isCall = opCode == OpCodes.Call || opCode == OpCodes.Callvirt || opCode == OpCodes.Newobj;
@@ -924,7 +951,8 @@ namespace PuzzleCore.Tests.Support
                     stack.Add(called.ReturnType);
                 }
 
-                return new FlowStep(instruction, takesInstance ? taken[0] : null, takesInstance ? taken.Skip(1).ToList() : taken);
+                TypeShape? instance = takesInstance ? (constraint ?? taken[0]) : null;
+                return new FlowStep(instruction, instance, takesInstance ? taken.Skip(1).ToList() : taken);
             }
 
             if (opCode == OpCodes.Calli)
@@ -948,19 +976,21 @@ namespace PuzzleCore.Tests.Support
             }
 
             // Read before the pops: dup (Pop1, Push1_push1) pushes the value it pops twice.
-            TypeShape? pushed = PushedType(instruction, stack, arguments, locals);
-            Pop(stack, PopCount(opCode.StackBehaviourPop));
+            TypeShape? pushed = PushedType(instruction, stack, variables);
+            IReadOnlyList<TypeShape?> popped = Pop(stack, PopCount(opCode.StackBehaviourPop));
             int pushes = PushCount(opCode.StackBehaviourPush);
             for (int push = 0; push < pushes; push++)
             {
                 stack.Add(pushed);
             }
 
-            return new FlowStep(instruction, null, Array.Empty<TypeShape?>());
+            // ldvirtftn takes the object whose method a delegate will call: the receiver of that later call.
+            TypeShape? receiver = opCode == OpCodes.Ldvirtftn ? popped[0] : null;
+            return new FlowStep(instruction, receiver, Array.Empty<TypeShape?>());
         }
 
         /// <summary>The declared type an instruction other than a call pushes, given the stack before it pops; null when unknown.</summary>
-        private TypeShape? PushedType(Instruction instruction, List<TypeShape?> stack, IReadOnlyList<TypeShape> arguments, IReadOnlyList<TypeShape> locals)
+        private TypeShape? PushedType(Instruction instruction, List<TypeShape?> stack, VariableTypes variables)
         {
             OpCode opCode = instruction.OpCode;
             if (opCode == OpCodes.Dup)
@@ -974,8 +1004,8 @@ namespace PuzzleCore.Tests.Support
                 || opCode == OpCodes.Ldloc_S || opCode == OpCodes.Ldloc;
             if (loadsArgument || loadsLocal)
             {
-                IReadOnlyList<TypeShape> variables = loadsArgument ? arguments : locals;
-                return instruction.Variable >= 0 && instruction.Variable < variables.Count ? variables[instruction.Variable] : null;
+                IReadOnlyList<TypeShape> declared = loadsArgument ? variables.Arguments : variables.Locals;
+                return instruction.Variable >= 0 && instruction.Variable < declared.Count ? declared[instruction.Variable] : null;
             }
 
             if (opCode == OpCodes.Ldfld || opCode == OpCodes.Ldsfld)
@@ -983,8 +1013,9 @@ namespace PuzzleCore.Tests.Support
                 return FieldType(instruction.Operand);
             }
 
-            bool castsTo = opCode == OpCodes.Castclass || opCode == OpCodes.Isinst || opCode == OpCodes.Unbox_Any;
-            return castsTo ? ShapeOf(instruction.Operand) : null;
+            // box keeps the type of the value it boxes (an int stays an int), so a call on the object still shows it.
+            bool keepsOperandType = opCode == OpCodes.Castclass || opCode == OpCodes.Isinst || opCode == OpCodes.Unbox_Any || opCode == OpCodes.Box;
+            return keepsOperandType ? ShapeOf(instruction.Operand) : null;
         }
 
         /// <summary>The signature of the method a call, callvirt or newobj names (generic parameters as placeholders); null for another operand.</summary>

@@ -109,6 +109,8 @@ namespace PuzzleCore.Tests.Guards.Samples
 
         public static StringBuilder InterpolatedAppend(StringBuilder builder, int pieces) => builder.Append($"{pieces} pieces");
 
+        public static string ObjectToString(long value) => ((object)value).ToString()!;
+
         public static CultureInfo CurrentCulture() => CultureInfo.CurrentCulture;
 
         public static CultureInfo CurrentUICulture() => CultureInfo.CurrentUICulture;

@@ -64,6 +64,17 @@ namespace PuzzleCore.Tests.Core
         }
 
         [Fact]
+        public void An_option_prints_its_value_by_its_own_text_and_a_number_with_the_invariant_culture()
+        {
+            // The tests run under tr-TR or sv-SE, and sv-SE writes a minus sign as U+2212.
+            Assert.Equal("Some(-5)", Option.Some(-5).ToString());
+            Assert.Equal("Some(gold)", Option.Some("gold").ToString());
+            Assert.Equal("Some(3)", Option.Some(new PieceId(3)).ToString());
+            Assert.Equal("Some()", Option.Some<string?>(null).ToString());
+            Assert.Equal("None", Option.None<int>().ToString());
+        }
+
+        [Fact]
         public void A_read_only_array_copies_its_source_and_compares_element_wise()
         {
             int[] source = { 1, 2, 3 };

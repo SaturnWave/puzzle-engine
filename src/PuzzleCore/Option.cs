@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 
 namespace PuzzleCore
 {
@@ -36,7 +37,8 @@ namespace PuzzleCore
 
         public override int GetHashCode() => HasValue ? EqualityComparer<T>.Default.GetHashCode(_value!) : 0;
 
-        public override string ToString() => HasValue ? "Some(" + (_value?.ToString() ?? string.Empty) + ")" : "None";
+        /// <summary>"Some(value)" or "None". A number is formatted with the invariant culture, any other value by its own ToString, and null as nothing.</summary>
+        public override string ToString() => HasValue ? string.Format(CultureInfo.InvariantCulture, "Some({0})", _value) : "None";
 
         public static bool operator ==(Option<T> left, Option<T> right) => left.Equals(right);
 
