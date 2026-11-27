@@ -99,6 +99,9 @@ namespace PuzzleCore.Tests.Guards.Samples
 
         public static string JoinNames(IReadOnlyList<string> names) => string.Join(",", names);
 
+        // Two from clauses: the compiler writes an anonymous type for the pairs, whose members are exempt.
+        public static int OrderedPairs(int[] first, int[] second) => (from x in first from y in second where x < y select x + y).Count();
+
         public static int Classify(int lines) => lines switch
         {
             0 => 0,

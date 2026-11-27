@@ -132,6 +132,8 @@ namespace PuzzleCore.Tests.Guards
             { "PolicyGapSamples::ComparisonFromParameter", "System.String::Equals", Passes + "a value the scan cannot read" },
             { "PolicyGapSamples::ComparisonFromLocal", "System.String::Equals", Passes + "a value the scan cannot read" },
             { "PolicyGapSamples::ComparisonMinusOne", "System.String::Equals", Passes + "the number -1" },
+            { "PolicyGapSamples::ComparisonSix", "System.String::Equals", Passes + "the number 6" },
+            { "PolicyGapSamples::ComparisonSeven", "System.String::Equals", Passes + "the number 7" },
             { "PolicyGapSamples::ComparisonEight", "System.String::Equals", Passes + "the number 8" },
             { "PolicyGapSamples::ComparisonOneHundred", "System.String::Equals", Passes + "the number 100" },
             { "PolicyGapSamples::ComparisonOneThousand", "System.String::Equals", Passes + "the number 1000" },
@@ -143,6 +145,13 @@ namespace PuzzleCore.Tests.Guards
             { "PolicyGapSamples::CompareThroughGenericInterfaceLocal", "System.IComparable`1::CompareTo", TextOrder },
             { "PolicyGapSamples::CompareThroughUnknownComparable", "System.IComparable::CompareTo", TextOrder },
             { "PolicyGapSamples::CompareElementOfComparables", "System.IComparable::CompareTo", TextOrder },
+            { "PolicyGapSamples::JoinSetOfDictionary", "System.String::Join", HashOrder },
+            { "PolicyGapSamples::ElementSetToList", "System.Linq.Enumerable::ToList", HashOrder },
+            { "PolicyGapSamples::FirstSetToList", "System.Linq.Enumerable::ToList", HashOrder },
+            { "PolicyGapSamples::TupleFieldSetToList", "System.Linq.Enumerable::ToList", HashOrder },
+            { "PolicyGapSamples::CompareElementOfTextList", "System.IComparable::CompareTo", TextOrder },
+            { "PolicyGapSamples::ElementOfGenericList", "System.Object::ToString", Culture },
+            { "PolicyGapSamples::AnonymousNumber", "System.Object::ToString", Culture },
         };
 
         /// <summary>
@@ -297,6 +306,11 @@ namespace PuzzleCore.Tests.Guards
             { "MemberBanSamples::ImmutableListBuilderBinarySearchText", "System.Collections.Immutable.ImmutableList`1+Builder::BinarySearch", TextOrder },
             { "MemberBanSamples::ComparableCompareTo", "System.IComparable::CompareTo", TextOrder },
             { "MemberBanSamples::GenericComparableCompareTo", "System.IComparable`1::CompareTo", TextOrder },
+            { "MemberBanSamples::StringReplaceWithCulture", "System.String::Replace", TextOrder },
+            { "MemberBanSamples::ValueTuple2CompareTo", "System.ValueTuple`2::CompareTo", TextOrder },
+            { "MemberBanSamples::ValueTuple3CompareTo", "System.ValueTuple`3::CompareTo", TextOrder },
+            { "MemberBanSamples::ValueTuple4CompareTo", "System.ValueTuple`4::CompareTo", TextOrder },
+            { "MemberBanSamples::CreateOrderedEnumerableText", "System.Linq.IOrderedEnumerable`1::CreateOrderedEnumerable", TextOrder },
             { "MemberBanSamples::ObjectGetHashCode", "System.Object::GetHashCode", RandomizedHash },
             { "ValueTypeHashSample::BaseHash", "System.ValueType::GetHashCode", RandomizedHash },
             { "MemberBanSamples::StringGetHashCode", "System.String::GetHashCode", RandomizedHash },
@@ -576,6 +590,15 @@ namespace PuzzleCore.Tests.Guards
         [InlineData("KnownGapSamples::ComparisonThroughDelegate")]
         [InlineData("KnownGapSamples::EnumValueOutsideItsMembers")]
         [InlineData("KnownGapSamples::TupleInAnArgumentArray")]
+        [InlineData("KnownGapSamples::EnumNumberOfAMember")]
+        [InlineData("KnownGapSamples::RecordText")]
+        [InlineData("KnownGapSamples::GenericCompareTo")]
+        [InlineData("KnownGapSamples::TextOfObject")]
+        [InlineData("KnownGapSamples::TextOfObjectField")]
+        [InlineData("KnownGapSamples::TextOfObjectElement")]
+        [InlineData("KnownGapSamples::NullCultureFromField")]
+        [InlineData("KnownGapSamples::NullProviderAtBranch")]
+        [InlineData("KnownGapSamples::ProviderThroughDelegate")]
         public void The_known_gaps_in_the_policy_remarks_pass_both_policies(string member)
         {
             string at = Samples + member;
@@ -591,9 +614,9 @@ namespace PuzzleCore.Tests.Guards
         {
             const string Sample = Samples + "MemberBansNearMissSample";
 
-            IReadOnlyList<Violation> banned = Scans.Value.MemberBans.Where(violation => IsIn(violation.Location, Sample)).ToList();
+            IReadOnlyList<Violation> banned = Scans.Value.MemberBans.Where(violation => IsIn(violation, Sample)).ToList();
 
-            Assert.Contains(Scans.Value.MemberReferences, site => IsInType(site.CallerType, Sample));
+            Assert.Contains(Scans.Value.MemberReferences, site => IsIn(site, Sample));
             Assert.True(banned.Count == 0, Report("The member bans alone report their near misses", banned));
         }
 
@@ -633,6 +656,33 @@ namespace PuzzleCore.Tests.Guards
                 && violation.Reason == "type " + UnityBoundApiPolicy.Default.RefusedTypeReason);
         }
 
+        [Theory]
+        [InlineData("FieldOnlyDeclaration", "System.TimeOnly")]
+        [InlineData("InterfaceOnlyDeclaration", "System.ICloneable")]
+        public void The_declared_types_show_a_refused_type_that_only_a_field_or_an_interface_names(string type, string external)
+        {
+            SampleScans scans = Scans.Value;
+
+            Assert.DoesNotContain(scans.UnityBound, violation => IsIn(violation, Samples + type));
+            Assert.Contains(scans.DeclaredTypes, use => use.DeclaringType == Samples + type && use.ExternalType == external);
+            Assert.Contains(scans.UnityBound, violation => violation.Location == "type reference " + external);
+        }
+
+        [Fact]
+        public void The_members_the_compiler_writes_for_an_anonymous_type_pass_both_policies()
+        {
+            const string AnonymousType = "<>f__AnonymousType";
+            SampleScans scans = Scans.Value;
+
+            IReadOnlyList<Violation> reported = scans.UnityBound.Concat(scans.MemberBans)
+                .Where(violation => violation.Location.StartsWith(AnonymousType, StringComparison.Ordinal))
+                .ToList();
+
+            // CleanIntegerOnlySample's query with two from clauses makes one, so there is always such a ToString to read.
+            Assert.Contains(scans.MemberReferences, site => site.CallerType.StartsWith(AnonymousType, StringComparison.Ordinal) && site.CallerMethod == "ToString");
+            Assert.True(reported.Count == 0, Report("The scans report members the compiler wrote for an anonymous type", reported));
+        }
+
         [Fact]
         public void The_scanners_stay_silent_on_clean_integer_only_code()
         {
@@ -641,11 +691,11 @@ namespace PuzzleCore.Tests.Guards
             IReadOnlyList<Violation> violations = scans.FloatingPoint
                 .Concat(scans.UnityBound)
                 .Concat(scans.MemberBans)
-                .Where(violation => CleanSamples.Any(type => IsIn(violation.Location, type)))
+                .Where(violation => CleanSamples.Any(type => IsIn(violation, type)))
                 .ToList();
-            IReadOnlyList<string> unread = CleanSamples.Where(type => !scans.MemberReferences.Any(site => IsInType(site.CallerType, type))).ToList();
+            IReadOnlyList<string> unread = CleanSamples.Where(type => !scans.MemberReferences.Any(site => IsIn(site, type))).ToList();
             IReadOnlyList<string> declared = scans.DeclaredTypes
-                .Where(use => CleanSamples.Any(type => IsInType(use.DeclaringType, type)))
+                .Where(use => CleanSamples.Any(type => IsIn(use, type)))
                 .Select(use => use.ExternalType)
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
@@ -711,11 +761,16 @@ namespace PuzzleCore.Tests.Guards
             violation.Location == member || violation.Location.StartsWith(member + "+IL_", StringComparison.Ordinal);
 
         /// <summary>Whether a location (Type::Member…) lies in the type or in a type nested in it (a closure, a state machine).</summary>
-        private static bool IsIn(string location, string type) =>
-            location.StartsWith(type + "::", StringComparison.Ordinal) || location.StartsWith(type + "+", StringComparison.Ordinal);
+        private static bool IsIn(Violation violation, string type) =>
+            violation.Location.StartsWith(type + "::", StringComparison.Ordinal) || violation.Location.StartsWith(type + "+", StringComparison.Ordinal);
 
-        /// <summary>Whether a type name is the type or a type nested in it.</summary>
-        private static bool IsInType(string typeName, string type) =>
+        /// <summary>Whether the member use lies in the type or in a type nested in it.</summary>
+        private static bool IsIn(MemberReferenceSite site, string type) => IsTypeOrNestedIn(site.CallerType, type);
+
+        /// <summary>Whether the declaration belongs to the type or to a type nested in it.</summary>
+        private static bool IsIn(DeclaredTypeUse use, string type) => IsTypeOrNestedIn(use.DeclaringType, type);
+
+        private static bool IsTypeOrNestedIn(string typeName, string type) =>
             typeName == type || typeName.StartsWith(type + "+", StringComparison.Ordinal);
 
         /// <summary>

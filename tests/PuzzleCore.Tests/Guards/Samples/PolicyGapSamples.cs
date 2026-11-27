@@ -92,8 +92,12 @@ namespace PuzzleCore.Tests.Guards.Samples
             return first.Equals(second, comparison);
         }
 
-        // Values outside the enum, one per form of ldc.i4 that pushes them: .m1, .8, .s and the four-byte form.
+        // Values outside the enum, one per form of ldc.i4 that pushes them: .m1, .6, .7, .8, .s and the four-byte form.
         public static bool ComparisonMinusOne(string first, string second) => first.Equals(second, (StringComparison)(-1));
+
+        public static bool ComparisonSix(string first, string second) => first.Equals(second, (StringComparison)6);
+
+        public static bool ComparisonSeven(string first, string second) => first.Equals(second, (StringComparison)7);
 
         public static bool ComparisonEight(string first, string second) => first.Equals(second, (StringComparison)8);
 
@@ -124,6 +128,22 @@ namespace PuzzleCore.Tests.Guards.Samples
         public static int CompareThroughUnknownComparable(IComparable comparable, string text) => comparable.CompareTo(text);
 
         public static int CompareElementOfComparables(IComparable[] comparables, string text) => comparables[0].CompareTo(text);
+
+        // A value read through a member of a generic type has the type that the caller fills in: a set, text, or a T.
+        public static string JoinSetOfDictionary(Dictionary<int, HashSet<string>> groups) => string.Join(",", groups[1]);
+
+        public static List<int> ElementSetToList(List<HashSet<int>> sets) => sets[0].ToList();
+
+        public static List<int> FirstSetToList(List<HashSet<int>> sets) => sets.First().ToList();
+
+        public static List<int> TupleFieldSetToList((HashSet<int> Set, int Count) pair) => pair.Set.ToList();
+
+        public static int CompareElementOfTextList(List<string> names) => ((IComparable)names[0]).CompareTo(names[1]);
+
+        public static string ElementOfGenericList<T>(IReadOnlyList<T> values) => values[0]!.ToString()!;
+
+        // An anonymous type formats its members as a tuple does.
+        public static string AnonymousNumber(int count) => new { Count = count }.ToString()!;
     }
 
     /// <summary>A generic type whose own parameter (!0) is the receiver, as in an Option&lt;T&gt;.ToString.</summary>

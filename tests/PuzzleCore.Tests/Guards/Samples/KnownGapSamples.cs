@@ -53,6 +53,35 @@ namespace PuzzleCore.Tests.Guards.Samples
         // An enum value outside the enum's members prints its number, a negative one with the device culture's minus.
         public static string EnumValueOutsideItsMembers() => ((KnownGapColour)(-5)).ToString();
 
+        // "D" prints a member's number too, a negative one with the device culture's minus.
+        public static string EnumNumberOfAMember() => KnownGapColour.Below.ToString("D");
+
+        // A record's ToString, called from hand-written code, formats its integer members by the device culture.
+        public static string RecordText(CleanCell cell) => cell.ToString();
+
+        // Comparing through a generic T: a T counts as no text, so a caller that fills it with string goes unseen.
+        public static int GenericCompareTo<T>(T first, T second)
+            where T : IComparable<T> => first.CompareTo(second);
+
+        // Values known only by their declared type: an object parameter, an object field, an element of a list of object.
+        public static string TextOfObject(object value) => value.ToString()!;
+
+        public static string TextOfObjectField() => BoxedNumber.ToString()!;
+
+        public static string TextOfObjectElement(List<object> values) => values[0].ToString()!;
+
+        // A null culture or provider from a field, or merged at a branch with a culture.
+        public static string NullCultureFromField(string text) => text.ToUpper(NoCulture);
+
+        public static string NullProviderAtBranch(int value, bool invariant) => value.ToString(invariant ? CultureInfo.InvariantCulture : null);
+
+        // A provider passed through a delegate, whose parameter is a generic placeholder.
+        public static string ProviderThroughDelegate(int value)
+        {
+            Func<IFormatProvider?, string> text = value.ToString;
+            return text(null);
+        }
+
         // A tuple that holds a number, in an argument array: the walk does not see an array's elements, and the provider
         // does not reach the number, which the tuple's ToString formats by the device culture.
         public static string TupleInAnArgumentArray(int first, int second) =>
@@ -87,12 +116,19 @@ namespace PuzzleCore.Tests.Guards.Samples
             return weighted;
         }
 
+        private static readonly object BoxedNumber = -5;
+
+#pragma warning disable CS0649 // Never assigned on purpose: the field holds null.
+        private static readonly CultureInfo? NoCulture;
+#pragma warning restore CS0649
+
         private static IEnumerable<int> AsSequence(HashSet<int> values) => values;
     }
 
     /// <summary>An enum of the known-gap samples' own.</summary>
     internal enum KnownGapColour
     {
+        Below = -1,
         Red = 1,
     }
 

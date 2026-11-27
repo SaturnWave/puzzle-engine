@@ -12,11 +12,13 @@ namespace PuzzleCore.Tests.Support
     /// time zone, or do floating-point math cannot slip in unnoticed. Member bans remove the culture-, platform- and
     /// process-dependent members they name: of allowed types, and of types left out that the member bans alone
     /// (<see cref="MemberBansPolicy"/>) must still refuse, such as a TextWriter's formatting. Rules over every call refuse
-    /// the values that make a call depend on the device culture (a null provider, culture or comparer; a StringComparison
-    /// other than a constant Ordinal or OrdinalIgnoreCase). The remarks list the uses they do not see. Adding a type or
-    /// lifting a ban is a reviewed change with a reason in the comment next to it. Members the compiler synthesizes for
-    /// records (ToString, PrintMembers, Equals, GetHashCode...) are exempt, on the rule that no result is ever built from
-    /// their output.
+    /// the values that make a call depend on the device culture: a null provider or culture, and a StringComparison other
+    /// than a constant Ordinal or OrdinalIgnoreCase. A null comparer counts as none in the bans that judge a comparer (the
+    /// sorted collections' constructors, the orderings and BinarySearch). The remarks list the known uses they do not see.
+    /// Adding a type or lifting a ban is a reviewed change with a reason in the comment next to it. The members the
+    /// compiler writes for records (ToString, PrintMembers, Equals, GetHashCode...) and for anonymous types are exempt, on
+    /// the rule that no result is ever built from their output; hand-written code that formats or orders an anonymous
+    /// type's value is judged as for a tuple.
     /// </summary>
     /// <remarks>
     /// Known gaps. Each of these passes this policy and <see cref="MemberBansPolicy"/>, and the guard tests plant each one
@@ -24,16 +26,24 @@ namespace PuzzleCore.Tests.Support
     /// <list type="bullet">
     /// <item><description>A dictionary or set handed on as an IEnumerable&lt;T&gt; through a helper's return value or an
     /// interface-typed local. What the IL walk knows of a value ends at a call it does not follow and at a local (see
-    /// <see cref="AssemblyInspection"/>); closing this needs tracking across methods.</description></item>
-    /// <item><description>For the same reason, other values stored in a local first: an integer boxed into an object
-    /// local before its ToString, or a null provider kept in a local. A StringComparison kept in a local is refused all
-    /// the same, as a value the walk cannot read.</description></item>
+    /// <see cref="AssemblyInspection"/>): tracking across methods would close the helper case, and keeping what a local
+    /// holds the local case.</description></item>
+    /// <item><description>For the same reason, other values known only by their declared type: an integer boxed into an
+    /// object local, parameter or field, or held in a collection of object, before its ToString; and a null provider or
+    /// culture kept in a local or a field, or merged at a branch with a culture. A StringComparison the walk cannot read
+    /// is refused all the same.</description></item>
     /// <item><description>A receiver the walk does not know, such as an element of an object array, which may be a boxed
     /// integer: an unknown receiver of Object.ToString counts as none.</description></item>
     /// <item><description>A StringComparison or a provider passed through a delegate (Func&lt;string, StringComparison,
-    /// bool&gt;.Invoke), whose parameter is a generic placeholder.</description></item>
-    /// <item><description>An enum value outside the enum's members: its ToString prints the number, a negative one with
-    /// the device culture's minus sign.</description></item>
+    /// bool&gt;.Invoke, Func&lt;IFormatProvider?, string&gt;.Invoke), whose parameter is a generic placeholder.</description></item>
+    /// <item><description>An enum value printed as its number: ToString("D") or Enum.Format with "D" for any value, and
+    /// ToString() for a value outside the enum's members. A negative number gets the device culture's minus sign.</description></item>
+    /// <item><description>A record's ToString called from hand-written code, directly or through a concatenation or a
+    /// format: the record exemption trusts that no result is built from it, and that ToString formats an integer member
+    /// by the device culture.</description></item>
+    /// <item><description>Ordering or comparing through a generic T (Comparer&lt;T&gt;.Default, CompareTo on a T that is
+    /// IComparable&lt;T&gt;, OrderBy over T): a T counts as no text, so a caller that fills it with string orders text
+    /// by the device culture.</description></item>
     /// <item><description>A tuple or a pair that holds an integer, given to a format with a provider where the walk does
     /// not see it: in an argument array (string.Format(provider, format, new object[] { pair }); likewise the array that
     /// FormattableString.Invariant($"{pair}") formats, whose types the allowlist refuses), or as a generic value. Its own
@@ -41,11 +51,12 @@ namespace PuzzleCore.Tests.Support
     /// as a generic number does reach the provider: string.Format(CultureInfo.InvariantCulture, "{0}", value) is a near
     /// miss in CleanNearMissSample.</description></item>
     /// </list>
-    /// <see cref="MemberBansPolicy"/> lets more through, as it refuses no type: number text, text order and the platform
-    /// newline through the members of types this allowlist leaves out, which the bans do not name. For example
-    /// double.ToString(), string.Create(null, $"…") (the interpolation handler keeps the provider in a local),
-    /// TextWriter.WriteLine, Console.WriteLine and Environment.NewLine (the platform newline), and enumerating a
-    /// ConcurrentDictionary through its own GetEnumerator.
+    /// <see cref="MemberBansPolicy"/> lets more through, as it refuses no type and keeps no member limit: number text,
+    /// text order and the platform newline through the members of types this allowlist leaves out or beyond an allowed
+    /// type's member limit, which the bans do not name. For example double.ToString(), NumberFormatInfo.CurrentInfo,
+    /// CultureInfo.InstalledUICulture and DefaultThreadCurrentCulture, string.Create(null, $"…") (the interpolation
+    /// handler keeps the provider in a local), TextWriter.WriteLine, Console.WriteLine and Environment.NewLine (the
+    /// platform newline), and enumerating a ConcurrentDictionary through its own GetEnumerator.
     /// </remarks>
     internal sealed class UnityBoundApiPolicy : IPlatformApiPolicy
     {
@@ -56,7 +67,8 @@ namespace PuzzleCore.Tests.Support
         private const string UnstableSort = "unstable sort: equal keys may come out in a different order on Mono/IL2CPP and .NET; use OrderBy";
         private const string LinguisticOrder = "orders text by the device culture or by the platform's collation tables (ICU, NLS and Mono differ); use StringComparer.Ordinal";
         private const string NullCulture = "depends on the device culture: a null provider or culture stands for it; pass CultureInfo.InvariantCulture";
-        private const string CultureComparison = "depends on the device culture unless the comparison is StringComparison.Ordinal or OrdinalIgnoreCase, written at the call; this call passes ";
+        private const string CultureComparison = "depends on the device culture or on the platform's collation tables unless the comparison is StringComparison.Ordinal or OrdinalIgnoreCase, written at the call; this call passes ";
+        private const string ValueText = "depends on the device culture: the value's own ToString formats a number by it; format the value with CultureInfo.InvariantCulture (string.Format(CultureInfo.InvariantCulture, \"{0}\", value), or each item of a tuple or a pair)";
         private const string WriterCulture = "depends on the device culture: a writer formats a value by its FormatProvider, the device culture unless the writer was made with another; write text formatted with CultureInfo.InvariantCulture";
         private const string TupleText = "depends on the device culture: a provider does not reach a tuple or a pair, whose own ToString formats the numbers it holds by the device culture; format the items with CultureInfo.InvariantCulture";
 
@@ -131,7 +143,7 @@ namespace PuzzleCore.Tests.Support
             string typeName = use.DeclaringType.DefinitionName;
             foreach (MemberBan ban in _bans.Where(ban => ban.TypeName == typeName && ban.MemberName == use.MemberName))
             {
-                bool isExempt = caller.IsSynthesizedRecordMember
+                bool isExempt = caller.IsCompilerWrittenMember
                     || (ban.ExemptInHashCodeOverrides && caller.MethodName == "GetHashCode")
                     || (ban.ExemptInIteratorPlumbing && caller.IsIteratorPlumbing);
                 if (!isExempt && ban.AppliesTo(use))
@@ -140,7 +152,7 @@ namespace PuzzleCore.Tests.Support
                 }
             }
 
-            if (caller.IsSynthesizedRecordMember)
+            if (caller.IsCompilerWrittenMember)
             {
                 yield break;
             }
@@ -320,6 +332,7 @@ namespace PuzzleCore.Tests.Support
             bans.Add(new MemberBan("System.String", "ToLower", WithParameters(parameters => parameters.Count == 0), Culture));
             bans.Add(new MemberBan("System.String", "Compare", WithParameters(parameters => !parameters.Contains("System.StringComparison")), Culture));
             bans.Add(new MemberBan("System.String", "CompareTo", _ => true, Culture));
+            bans.Add(new MemberBan("System.String", "Replace", WithParameters(parameters => parameters.Contains("System.Globalization.CultureInfo")), LinguisticOrder));
             foreach (string search in new[] { "StartsWith", "EndsWith", "IndexOf", "LastIndexOf" })
             {
                 bans.Add(new MemberBan("System.String", search,
@@ -379,7 +392,7 @@ namespace PuzzleCore.Tests.Support
             // constrained. prefix keep the value's own type). The ToString() of a FormattableString or an IFormattable
             // formats by the device culture as well. System.ValueType.ToString needs no ban: C# names it only for
             // base.ToString() in a struct, whose receiver is that struct, and it prints the struct's type name.
-            bans.Add(new MemberBan("System.Object", "ToString", use => ToStringFormatsByCulture(use.Instance), Culture));
+            bans.Add(new MemberBan("System.Object", "ToString", use => ToStringFormatsByCulture(use.Instance), ValueText));
 
             // FormattableStringFactory.Create only keeps a format and its values. What formats them is the FormattableString's
             // ToString() (above), its ToString(provider) given null (the rule over every call) or CurrentCulture;
@@ -408,6 +421,14 @@ namespace PuzzleCore.Tests.Support
             foreach (string ordering in new[] { "OrderBy", "OrderByDescending", "ThenBy", "ThenByDescending", "Order", "OrderDescending", "Min", "Max", "MinBy", "MaxBy" })
             {
                 bans.Add(new MemberBan("System.Linq.Enumerable", ordering, use => !TakesComparer(use) && OrdersText(SortKey(use)), LinguisticOrder));
+            }
+
+            bans.Add(new MemberBan("System.Linq.IOrderedEnumerable`1", "CreateOrderedEnumerable", use => !TakesComparer(use) && OrdersText(SortKey(use)), LinguisticOrder));
+
+            // A tuple's own CompareTo compares its items by their default comparers, a string's by the device culture.
+            foreach (string tuple in new[] { "System.ValueTuple`2", "System.ValueTuple`3", "System.ValueTuple`4" })
+            {
+                bans.Add(new MemberBan(tuple, "CompareTo", use => OrdersText(use.DeclaringType), LinguisticOrder));
             }
 
             // BinarySearch without a comparer searches by the default comparer, which compares text by the device culture:
@@ -568,9 +589,10 @@ namespace PuzzleCore.Tests.Support
         private static bool MayCompareText(TypeShape? receiver) =>
             receiver is null || OrdersText(receiver) || receiver.DefinitionName == "System.IComparable";
 
+        /// <summary>A tuple, a pair or an anonymous type, which formats and compares the values it holds by their own members.</summary>
         private static bool IsTupleLike(string definitionName) =>
             definitionName.StartsWith("System.ValueTuple`", StringComparison.Ordinal) || definitionName.StartsWith("System.Tuple`", StringComparison.Ordinal)
-            || definitionName == "System.Collections.Generic.KeyValuePair`2";
+            || definitionName == "System.Collections.Generic.KeyValuePair`2" || definitionName.StartsWith("<>f__AnonymousType", StringComparison.Ordinal);
 
         /// <summary>
         /// Whether a value's ToString formats an integer by the device culture: an integer, a generic parameter that may be

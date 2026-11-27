@@ -212,6 +212,17 @@ namespace PuzzleCore.Tests.Guards.Samples
 
         public static int GenericComparableCompareTo(string first, string second) => ((IComparable<string>)first).CompareTo(second);
 
+        public static string StringReplaceWithCulture(string text) => text.Replace("a", "b", true, CultureInfo.InvariantCulture);
+
+        public static int ValueTuple2CompareTo((string Name, int Rank) first, (string Name, int Rank) second) => first.CompareTo(second);
+
+        public static int ValueTuple3CompareTo((string, int, int) first, (string, int, int) second) => first.CompareTo(second);
+
+        public static int ValueTuple4CompareTo((string, int, int, int) first, (string, int, int, int) second) => first.CompareTo(second);
+
+        public static List<string> CreateOrderedEnumerableText(IEnumerable<string> names) =>
+            names.OrderBy(name => name.Length).CreateOrderedEnumerable(name => name, null, false).ToList();
+
         // Hash codes, which are randomized per process.
         public static int ObjectGetHashCode(object value) => value.GetHashCode();
 

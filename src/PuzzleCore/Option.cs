@@ -37,7 +37,12 @@ namespace PuzzleCore
 
         public override int GetHashCode() => HasValue ? EqualityComparer<T>.Default.GetHashCode(_value!) : 0;
 
-        /// <summary>"Some(value)" or "None". A number is formatted with the invariant culture, any other value by its own ToString, and null as nothing.</summary>
+        /// <summary>
+        /// "Some(value)" or "None". The value is formatted as string.Format with the invariant culture formats it: an
+        /// IFormattable value, every number among them, through ToString(null, CultureInfo.InvariantCulture); any other
+        /// value through ToString(); null as nothing. An enum ignores the culture, so a value outside its members prints
+        /// the device's minus sign (a known gap of the engine's determinism guard).
+        /// </summary>
         public override string ToString() => HasValue ? string.Format(CultureInfo.InvariantCulture, "Some({0})", _value) : "None";
 
         public static bool operator ==(Option<T> left, Option<T> right) => left.Equals(right);

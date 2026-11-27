@@ -341,6 +341,7 @@ public enum InvalidReason { IllegalMove, SpareOutsideFail, SecondSpare, RewindOu
 - [ ] Integer maths only in Core, Sort, Jam, Bot, Validation, PuzzleMeta and PuzzleClient. No `float`/`double`/`decimal` (IL guard). Ratios are `PerMille` integers.
 - [ ] No `System.Random`, `DateTime`, `Stopwatch`, `Environment.TickCount` or `Guid.NewGuid` in the core. Time enters only as recorded `sincePreviousMs`. Game-session and day counts enter only through `OfferContext`, `RewardedAdCapState` and `LevelEndContext`.
 - [ ] Never iterate `Dictionary`/`HashSet` where the order affects output. Use arrays indexed by id, or sort by key first.
+- [ ] Text is compared and ordered ordinally only: `StringComparison.Ordinal` or `OrdinalIgnoreCase` written at the call, `StringComparer.Ordinal` for sorts, searches and sorted collections. Never pass a null provider, culture or comparer (IL guard).
 - [ ] Stable sorting only: an explicit `(key, id)` tiebreak or insertion sort on small arrays. Never rely on `Array.Sort` stability.
 - [ ] Hashes use FNV, never `string.GetHashCode` or `System.HashCode`. Hash code goes in `unchecked { }` blocks, each with a comment.
 - [ ] Every string the engine emits, stream keys included, is built with explicit `ToString(CultureInfo.InvariantCulture)`, never `$""` interpolation. The `HostileCulture` tests run under tr-TR and sv-SE.

@@ -18,7 +18,7 @@ namespace PuzzleCore.Tests.Guards.Samples
     /// Planted violations that one part of the scan alone sees: a set whose type the IL walk learns from a local, a
     /// field, newobj, dup, a cast or a branch; each hash-ordered type and each sequence parameter type of
     /// <see cref="Support.UnorderedSequences"/>, and its receiver and LINQ-over-pairs rules; each member limit of the
-    /// Unity-bound allowlist; a refused type that only a signature names, and one that only a type argument names; and a
+    /// Unity-bound allowlist; a refused type that only a signature, a type argument, a field or an interface names; and a
     /// floating-point type argument. Lives in the test assembly only; the guard tests expect each violation at its member.
     /// </summary>
     internal static class PolicyEdgeSamples
@@ -157,5 +157,19 @@ namespace PuzzleCore.Tests.Guards.Samples
 
         // A GetHashCode override may call the hashing members, and no other banned member: this one formats an integer.
         public override int GetHashCode() => _row.ToString().Length;
+    }
+
+    /// <summary>A refused type that only a field names: no method body reads or writes the field, and no other declaration of this type names TimeOnly.</summary>
+    internal static class FieldOnlyDeclaration
+    {
+#pragma warning disable CS0649 // Never assigned on purpose: only the field's declaration names the type.
+        public static TimeOnly Moment;
+#pragma warning restore CS0649
+    }
+
+    /// <summary>A refused type that only an interface implementation names: Clone's signature names Object alone.</summary>
+    internal sealed class InterfaceOnlyDeclaration : ICloneable
+    {
+        public object Clone() => this;
     }
 }

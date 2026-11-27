@@ -119,8 +119,8 @@ namespace PuzzleCore.Tests.Support
     /// Reads a compiled assembly's metadata and IL without loading it, to prove rules the compiler cannot enforce.
     /// Everything is checked on the compiled output, so <c>var</c> hides nothing, and a helper method hides no call it
     /// makes: every method body is scanned, whoever calls it. What a rule sees of a value, though, is what the IL walk
-    /// knows of it (see Flow), so a value handed on through a helper's return value or a local can escape a rule that
-    /// judges values (the remarks of <see cref="UnityBoundApiPolicy"/> list the known gaps).
+    /// knows of it (see Flow), so a value handed on through a helper's parameter or return value, a field or a local can
+    /// escape a rule that judges values (the remarks of <see cref="UnityBoundApiPolicy"/> list the known gaps).
     /// </summary>
     internal sealed class AssemblyInspection : IDisposable
     {
@@ -294,7 +294,7 @@ namespace PuzzleCore.Tests.Support
 
         /// <summary>
         /// Catch blocks that swallow everything (catch (Exception), a bare catch, or such a catch
-        /// with a when-filter) and catch blocks with an empty body (CLAUDE.md, rule 6).
+        /// with a when-filter) and catch blocks with an empty body: the code standard allows neither.
         /// </summary>
         public IReadOnlyList<Violation> GenericOrEmptyCatchBlocks()
         {
@@ -394,8 +394,9 @@ namespace PuzzleCore.Tests.Support
                 }
 
                 string methodName = _reader.GetString(method.Name);
-                bool isSynthesizedRecordMember = RecordSynthesizedMemberNames.Contains(methodName) && IsCompilerGenerated(method);
-                var caller = new CallerContext(methodName, isSynthesizedRecordMember, IsIteratorPlumbing(method, methodName));
+                bool isCompilerWrittenMember = (RecordSynthesizedMemberNames.Contains(methodName) && IsCompilerGenerated(method))
+                    || IsAnonymousTypeMember(method);
+                var caller = new CallerContext(methodName, isCompilerWrittenMember, IsIteratorPlumbing(method, methodName));
                 foreach (FlowStep step in Flow(methodHandle))
                 {
                     found.AddRange(PolicyViolationsAt(methodHandle, step, caller, policy));
@@ -672,11 +673,24 @@ namespace PuzzleCore.Tests.Support
         private string DescribeOperand(EntityHandle operand) =>
             MemberUseOf(operand)?.Display ?? ShapeOf(operand).Display;
 
-        private bool IsCompilerGenerated(MethodDefinition method) => method.GetCustomAttributes()
+        private bool IsCompilerGenerated(MethodDefinition method) => HasCompilerGeneratedAttribute(method.GetCustomAttributes());
+
+        private bool HasCompilerGeneratedAttribute(CustomAttributeHandleCollection attributes) => attributes
             .Select(handle => _reader.GetCustomAttribute(handle).Constructor)
             .Where(constructor => constructor.Kind == HandleKind.MemberReference)
             .Select(constructor => ShapeOfParent(_reader.GetMemberReference((MemberReferenceHandle)constructor).Parent).DefinitionName)
             .Contains(CompilerGeneratedAttribute, StringComparer.Ordinal);
+
+        /// <summary>
+        /// A member of an anonymous type, which the compiler writes whole: the type is named &lt;&gt;f__AnonymousTypeN and
+        /// carries [CompilerGenerated] (its methods do not), and its ToString formats each member with a null provider.
+        /// </summary>
+        private bool IsAnonymousTypeMember(MethodDefinition method)
+        {
+            TypeDefinition type = _reader.GetTypeDefinition(method.GetDeclaringType());
+            return _reader.GetString(type.Name).StartsWith("<>f__AnonymousType", StringComparison.Ordinal)
+                && HasCompilerGeneratedAttribute(type.GetCustomAttributes());
+        }
 
         /// <summary>
         /// The constructor or GetEnumerator of a compiler-written iterator state machine
@@ -688,11 +702,7 @@ namespace PuzzleCore.Tests.Support
             TypeDefinition type = _reader.GetTypeDefinition(method.GetDeclaringType());
             string typeName = _reader.GetString(type.Name);
             bool isIteratorType = typeName.StartsWith('<') && typeName.Contains(">d__", StringComparison.Ordinal)
-                && type.GetCustomAttributes()
-                    .Select(handle => _reader.GetCustomAttribute(handle).Constructor)
-                    .Where(constructor => constructor.Kind == HandleKind.MemberReference)
-                    .Select(constructor => ShapeOfParent(_reader.GetMemberReference((MemberReferenceHandle)constructor).Parent).DefinitionName)
-                    .Contains(CompilerGeneratedAttribute, StringComparer.Ordinal);
+                && HasCompilerGeneratedAttribute(type.GetCustomAttributes());
             bool isPlumbingMethod = methodName == ".ctor" || methodName.EndsWith("GetEnumerator", StringComparison.Ordinal);
             return isIteratorType && isPlumbingMethod;
         }
@@ -903,7 +913,9 @@ namespace PuzzleCore.Tests.Support
         /// <summary>
         /// Every instruction of the method in order, each call, callvirt and newobj with the static types of the values it
         /// takes, and each ldvirtftn with the object it takes. One forward walk tracks the evaluation stack: a value loaded
-        /// from an argument, a local or a field, returned by a call, made by newobj or cast keeps its declared type; box
+        /// from an argument, a local or a field, returned by a call, made by newobj or cast keeps its declared type, the
+        /// generic parameters of a field's or a call's type filled with the type arguments it is used with (an element of
+        /// a List&lt;Piece&gt; is a Piece); box
         /// keeps the type of the value it boxes; a callvirt after the constrained. prefix takes a receiver of the prefix's
         /// type; ldnull pushes <see cref="TypeShape.NullReference"/>; ldc.i4 pushes an Int32 with its
         /// <see cref="TypeShape.Constant"/>; every other value is unknown (null). Where control merges, a slot keeps its
@@ -985,7 +997,7 @@ namespace PuzzleCore.Tests.Support
             bool isCall = opCode == OpCodes.Call || opCode == OpCodes.Callvirt || opCode == OpCodes.Newobj;
             if (isCall)
             {
-                MethodSignature<TypeShape> called = CallSignature(instruction.Operand)
+                MethodSignature<TypeShape> called = CallSignature(instruction.Operand, GenericArguments.Of(MemberUseOf(instruction.Operand)))
                     ?? throw new InvalidDataException("A call names no method: " + instruction.Operand.Kind.ToString());
                 bool takesInstance = called.Header.IsInstance && opCode != OpCodes.Newobj;
                 IReadOnlyList<TypeShape?> taken = Pop(stack, called.ParameterTypes.Length + (takesInstance ? 1 : 0));
@@ -1057,7 +1069,7 @@ namespace PuzzleCore.Tests.Support
 
             if (opCode == OpCodes.Ldfld || opCode == OpCodes.Ldsfld)
             {
-                return FieldType(instruction.Operand);
+                return FieldType(instruction.Operand, GenericArguments.Of(MemberUseOf(instruction.Operand)));
             }
 
             if (opCode == OpCodes.Ldnull)
@@ -1075,13 +1087,16 @@ namespace PuzzleCore.Tests.Support
             return keepsOperandType ? ShapeOf(instruction.Operand) : null;
         }
 
-        /// <summary>The signature of the method a call, callvirt or newobj names (generic parameters as placeholders); null for another operand.</summary>
-        private MethodSignature<TypeShape>? CallSignature(EntityHandle operand) => operand.Kind switch
+        /// <summary>
+        /// The signature of the method a call, callvirt or newobj names, its generic parameters filled with the arguments
+        /// the call uses where known (placeholders otherwise); null for another operand.
+        /// </summary>
+        private MethodSignature<TypeShape>? CallSignature(EntityHandle operand, GenericArguments? arguments) => operand.Kind switch
         {
-            HandleKind.MethodDefinition => _reader.GetMethodDefinition((MethodDefinitionHandle)operand).DecodeSignature(_shapes, null),
+            HandleKind.MethodDefinition => _reader.GetMethodDefinition((MethodDefinitionHandle)operand).DecodeSignature(_shapes, arguments),
             HandleKind.MemberReference when _reader.GetMemberReference((MemberReferenceHandle)operand).GetKind() == MemberReferenceKind.Method =>
-                _reader.GetMemberReference((MemberReferenceHandle)operand).DecodeMethodSignature(_shapes, null),
-            HandleKind.MethodSpecification => CallSignature(_reader.GetMethodSpecification((MethodSpecificationHandle)operand).Method),
+                _reader.GetMemberReference((MemberReferenceHandle)operand).DecodeMethodSignature(_shapes, arguments),
+            HandleKind.MethodSpecification => CallSignature(_reader.GetMethodSpecification((MethodSpecificationHandle)operand).Method, arguments),
             _ => null,
         };
 
@@ -1094,13 +1109,25 @@ namespace PuzzleCore.Tests.Support
             _ => throw new InvalidDataException("Not a method handle: " + operand.Kind.ToString()),
         };
 
-        private TypeShape? FieldType(EntityHandle operand) => operand.Kind switch
+        /// <summary>The type of the field an ldfld or ldsfld names, its generic parameters filled as <see cref="CallSignature"/> fills them.</summary>
+        private TypeShape? FieldType(EntityHandle operand, GenericArguments? arguments) => operand.Kind switch
         {
-            HandleKind.FieldDefinition => _reader.GetFieldDefinition((FieldDefinitionHandle)operand).DecodeSignature(_shapes, null),
+            HandleKind.FieldDefinition => _reader.GetFieldDefinition((FieldDefinitionHandle)operand).DecodeSignature(_shapes, arguments),
             HandleKind.MemberReference when _reader.GetMemberReference((MemberReferenceHandle)operand).GetKind() == MemberReferenceKind.Field =>
-                _reader.GetMemberReference((MemberReferenceHandle)operand).DecodeFieldSignature(_shapes, null),
+                _reader.GetMemberReference((MemberReferenceHandle)operand).DecodeFieldSignature(_shapes, arguments),
             _ => null,
         };
+
+        /// <summary>
+        /// The type arguments that fill a member's generic parameters where it is used: its type's (!n) and its method's
+        /// (!!n). A signature decoded with them names the caller's types.
+        /// </summary>
+        private sealed record GenericArguments(ImmutableArray<TypeShape> OfType, IReadOnlyList<TypeShape> OfMethod)
+        {
+            /// <summary>The arguments a member use fills in; null for no member, which leaves every placeholder as it is.</summary>
+            public static GenericArguments? Of(MemberUse? use) =>
+                use is null ? null : new GenericArguments(use.DeclaringType.TypeArguments, use.MethodTypeArguments);
+        }
 
         /// <summary>Removes and returns the top <paramref name="count"/> values, deepest first; values the walk lost track of are null.</summary>
         private static IReadOnlyList<TypeShape?> Pop(List<TypeShape?> stack, int count)
@@ -1220,10 +1247,14 @@ namespace PuzzleCore.Tests.Support
             };
 
             public TypeShape GetGenericMethodParameter(object? genericContext, int index) =>
-                Placeholder("!!" + index.ToString(CultureInfo.InvariantCulture));
+                genericContext is GenericArguments arguments && index < arguments.OfMethod.Count
+                    ? arguments.OfMethod[index]
+                    : Placeholder("!!" + index.ToString(CultureInfo.InvariantCulture));
 
             public TypeShape GetGenericTypeParameter(object? genericContext, int index) =>
-                Placeholder("!" + index.ToString(CultureInfo.InvariantCulture));
+                genericContext is GenericArguments arguments && index < arguments.OfType.Length
+                    ? arguments.OfType[index]
+                    : Placeholder("!" + index.ToString(CultureInfo.InvariantCulture));
 
             public TypeShape GetFunctionPointerType(MethodSignature<TypeShape> signature) => new(
                 "method", "method",
@@ -1238,8 +1269,11 @@ namespace PuzzleCore.Tests.Support
         }
     }
 
-    /// <summary>The calling method, needed by bans that exempt GetHashCode overrides and record members the compiler writes.</summary>
-    internal sealed record CallerContext(string MethodName, bool IsSynthesizedRecordMember, bool IsIteratorPlumbing);
+    /// <summary>
+    /// The calling method, needed by bans that exempt GetHashCode overrides and the members the compiler writes for
+    /// records and anonymous types.
+    /// </summary>
+    internal sealed record CallerContext(string MethodName, bool IsCompilerWrittenMember, bool IsIteratorPlumbing);
 
     /// <summary>Which platform types and members an assembly may use: <see cref="UnityBoundApiPolicy"/> or <see cref="MemberBansPolicy"/>.</summary>
     internal interface IPlatformApiPolicy

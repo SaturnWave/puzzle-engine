@@ -70,6 +70,7 @@ namespace PuzzleCore.Tests.Core
             Assert.Equal("Some(-5)", Option.Some(-5).ToString());
             Assert.Equal("Some(gold)", Option.Some("gold").ToString());
             Assert.Equal("Some(3)", Option.Some(new PieceId(3)).ToString());
+            Assert.Equal("Some(Monday)", Option.Some(DayOfWeek.Monday).ToString());
             Assert.Equal("Some()", Option.Some<string?>(null).ToString());
             Assert.Equal("None", Option.None<int>().ToString());
         }

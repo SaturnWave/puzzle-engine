@@ -73,7 +73,7 @@ dotnet_diagnostic.CA1311.severity = error
 dotnet_diagnostic.CA1031.severity = error
 
 # CA1859 asks for concrete collection types "for performance". Read-only interfaces
-# state intent, and CLAUDE.md says: do not optimise before measuring.
+# state intent, and the code standard says: do not optimise before measuring.
 dotnet_diagnostic.CA1859.severity = none
 # CA1861 (constant array arguments) is the same kind of unmeasured micro-optimisation.
 dotnet_diagnostic.CA1861.severity = none

@@ -5,7 +5,7 @@ using System;
 
 namespace PuzzleCore.Tests.Guards.Samples
 {
-    /// <summary>Catch blocks the code standard forbids (CLAUDE.md, rule 6), one per method.</summary>
+    /// <summary>Catch blocks the code standard forbids (a catch-all or an empty catch), one per method.</summary>
     internal static class ForbiddenCatchSample
     {
         public static int CatchesEverything(string text)

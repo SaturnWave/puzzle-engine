@@ -23,8 +23,6 @@ namespace PuzzleCore.Tests.Guards.Samples
 
         public static string PairOfText(KeyValuePair<string, string> pair) => pair.ToString();
 
-        public static string RecordText(CleanCell cell) => cell.ToString();
-
         public static string EnumName(CleanColour colour) => colour.ToString();
 
         public static string GenericWithInvariantCulture<T>(T value) => string.Format(CultureInfo.InvariantCulture, "value {0}", value);
@@ -118,6 +116,48 @@ namespace PuzzleCore.Tests.Guards.Samples
 
         public static StringBuilder AppendFormatPairOfTextWithProvider(StringBuilder builder, KeyValuePair<string, string> pair) =>
             builder.AppendFormat(CultureInfo.InvariantCulture, "{0}", pair);
+
+        // A value read through a member of a generic type has the type the caller fills in: here text, or a class whose
+        // ToString prints a constant, not a T.
+        public static string LabelOfList(IReadOnlyList<CleanLabel> labels) => labels[0].ToString();
+
+        public static string LabelInText(IReadOnlyList<CleanLabel> labels) => "label " + labels[0];
+
+        public static string FirstLabel(IEnumerable<CleanLabel> labels) => labels.First().ToString();
+
+        public static string LabelsInKeyOrder(SortedDictionary<int, CleanLabel> labels)
+        {
+            var text = new StringBuilder();
+            foreach (KeyValuePair<int, CleanLabel> entry in labels)
+            {
+                text.Append(entry.Value.ToString());
+            }
+
+            return text.ToString();
+        }
+
+        public static string LabelOfPair((CleanLabel Label, int Count) pair) => pair.Label.ToString();
+
+        public static string NameOfList(List<string> names) => names[0].ToString();
+
+        // An anonymous type of text, a tuple of numbers compared, an ordering by ordinal or by a number, and an ordinal Replace.
+        public static string AnonymousText(string name) => new { Name = name }.ToString()!;
+
+        public static int CompareTupleOfNumbers((int Row, int Column) first, (int Row, int Column) second) => first.CompareTo(second);
+
+        public static List<string> CreateOrderedEnumerableOrdinal(IEnumerable<string> names) =>
+            names.OrderBy(name => name.Length).CreateOrderedEnumerable(name => name, StringComparer.Ordinal, false).ToList();
+
+        public static List<string> CreateOrderedEnumerableOfNumbers(IEnumerable<string> names) =>
+            names.OrderBy(name => name.Length).CreateOrderedEnumerable(name => name.Length * 2, null, true).ToList();
+
+        public static string ReplaceOrdinal(string text) => text.Replace("a", "b", StringComparison.Ordinal);
+    }
+
+    /// <summary>A class of the clean samples' own whose ToString prints a constant, as a hand-written ToString may.</summary>
+    internal sealed class CleanLabel
+    {
+        public override string ToString() => "label";
     }
 
     /// <summary>An enum of the sample's own: its ToString prints the member's name.</summary>

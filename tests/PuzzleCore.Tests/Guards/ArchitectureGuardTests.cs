@@ -12,7 +12,7 @@ using Xunit;
 namespace PuzzleCore.Tests.Guards
 {
     /// <summary>
-    /// Keeps the layering of CLAUDE.md and the netstandard2.1 / C# 9 / no-package rule for
+    /// Keeps the project layering (ProjectRules) and the netstandard2.1 / C# 9 / no-package rule for
     /// the assemblies the Unity client compiles in. The build itself enforces the rules on
     /// evaluated MSBuild values (Directory.Build.targets, error BLOCK001); these tests prove
     /// that guard exists, fires and cannot be bypassed by an extra MSBuild file, and check the
